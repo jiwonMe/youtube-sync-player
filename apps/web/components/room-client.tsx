@@ -27,6 +27,7 @@ import {
   ArrowUp,
   ArrowDown,
   AlertCircle,
+  Loader2,
 } from "lucide-react"
 // @ts-ignore - 패키지가 설치되지 않았을 때 타입 오류 무시
 import { DragDropContext, Droppable, Draggable, DroppableProvided, DraggableProvided, DraggableStateSnapshot, DropResult } from "@hello-pangea/dnd"
@@ -148,6 +149,7 @@ export default function RoomClient({ roomId }: { roomId: string }) {
   const [videoUrl, setVideoUrl] = useState("")
   const [isAddingVideo, setIsAddingVideo] = useState(false)
   const [copySuccess, setCopySuccess] = useState(false)
+  const [isVideoChanging, setIsVideoChanging] = useState(false)
 
   const playerRef = useRef<any>(null)
   const chatEndRef = useRef<HTMLDivElement>(null)
@@ -193,27 +195,29 @@ export default function RoomClient({ roomId }: { roomId: string }) {
     socketIo.on("video:change", (data) => {
       const video = roomState.playlist.find((v) => v.videoId === data.videoId)
       if (video) {
-        // 비디오 변경 시 플레이어 상태 초기화를 위해 잠시 currentVideo를 null로 설정
+        // 비디오 전환 중 상태 설정
+        setIsVideoChanging(true);
+        
+        // 비디오 변경 시 한 번에 상태 업데이트하여 리렌더링 최소화
         setRoomState((prev) => ({
           ...prev,
-          currentVideo: null,
+          currentVideo: video,
+          currentTime: data.currentTime || 0,
+          isPlaying: true, // 항상 재생 상태로 설정
         }))
         
-        // 약간의 지연 후 새 비디오 설정
+        // 비디오가 변경되면 자동으로 스크롤하여 현재 재생 중인 비디오를 표시
         setTimeout(() => {
-          setRoomState((prev) => ({
-            ...prev,
-            currentVideo: video,
-            currentTime: data.currentTime,
-            isPlaying: true, // 항상 재생 상태로 설정
-          }))
-          
-          // 비디오가 변경되면 자동으로 스크롤하여 현재 재생 중인 비디오를 표시
           const playlistItem = document.getElementById(`playlist-item-${video.id}`);
           if (playlistItem) {
             playlistItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
           }
-        }, 100)
+          
+          // 비디오 로딩 완료 후 전환 상태 해제 (약간의 지연 추가)
+          setTimeout(() => {
+            setIsVideoChanging(false);
+          }, 500);
+        }, 300); // 상태 업데이트 후 스크롤 동작을 위해 약간의 지연
       }
     })
 
@@ -359,10 +363,11 @@ export default function RoomClient({ roomId }: { roomId: string }) {
       variant: "destructive",
     });
     
-    // 에러 발생 시 다음 비디오로 자동 전환
-    setTimeout(() => {
-      handleNextVideo(true); // 강제로 다음 비디오로 넘어가도록 true 전달
-    }, 2000); // 2초 후 다음 비디오로 전환 (토스트 메시지를 충분히 표시하기 위함)
+    // 비디오 전환 중 상태 설정
+    setIsVideoChanging(true);
+    
+    // 에러 발생 시 다음 비디오로 즉시 전환 (토스트 메시지는 그대로 표시됨)
+    handleNextVideo(true); // 강제로 다음 비디오로 넘어가도록 true 전달
   }
 
   // Handle play/pause
@@ -398,27 +403,26 @@ export default function RoomClient({ roomId }: { roomId: string }) {
 
     if (currentIndex < roomState.playlist.length - 1) {
       const nextVideo = roomState.playlist[currentIndex + 1]
-
-      // 비디오 변경 전에 플레이어 상태 초기화
-      setRoomState((prev) => ({
-        ...prev,
-        isPlaying: false,
-        currentVideo: null, // 현재 비디오를 null로 설정하여 플레이어 초기화
-      }));
+      
+      // 비디오 전환 중 상태 설정
+      setIsVideoChanging(true);
       
       // 즉시 다음 비디오로 변경하고 서버에 알림
       if (socket) {
         socket.emit("video:change", nextVideo.id);
         
         // 로컬 상태도 즉시 업데이트하여 UI 반응성 향상
+        setRoomState((prev) => ({
+          ...prev,
+          currentVideo: nextVideo,
+          currentTime: 0,
+          isPlaying: true,
+        }));
+        
+        // 비디오 로딩 완료 후 전환 상태 해제 (약간의 지연 추가)
         setTimeout(() => {
-          setRoomState((prev) => ({
-            ...prev,
-            currentVideo: nextVideo,
-            currentTime: 0,
-            isPlaying: true,
-          }));
-        }, 50);
+          setIsVideoChanging(false);
+        }, 1000);
       }
     }
   }
@@ -444,26 +448,25 @@ export default function RoomClient({ roomId }: { roomId: string }) {
       return;
     }
     
-    // 비디오 변경 전에 플레이어 상태 초기화
-    setRoomState((prev) => ({
-      ...prev,
-      isPlaying: false,
-      currentVideo: null, // 현재 비디오를 null로 설정하여 플레이어 초기화
-    }));
+    // 비디오 전환 중 상태 설정
+    setIsVideoChanging(true);
     
     // 즉시 비디오 변경 이벤트 발송
     if (socket) {
       socket.emit("video:change", video.id);
       
       // 로컬 상태도 즉시 업데이트하여 UI 반응성 향상
+      setRoomState((prev) => ({
+        ...prev,
+        currentVideo: video,
+        currentTime: 0,
+        isPlaying: true,
+      }));
+      
+      // 비디오 로딩 완료 후 전환 상태 해제 (약간의 지연 추가)
       setTimeout(() => {
-        setRoomState((prev) => ({
-          ...prev,
-          currentVideo: video,
-          currentTime: 0,
-          isPlaying: true,
-        }));
-      }, 50);
+        setIsVideoChanging(false);
+      }, 1000);
     }
   }
 
@@ -698,15 +701,25 @@ export default function RoomClient({ roomId }: { roomId: string }) {
                   <Skeleton className="h-full w-full" />
                 </div>
               ) : roomState.currentVideo ? (
-                <YouTubePlayer
-                  videoId={roomState.currentVideo.videoId}
-                  isPlaying={roomState.isPlaying}
-                  currentTime={roomState.currentTime}
-                  onStateChange={handlePlayerStateChange}
-                  isMuted={isMuted}
-                  playerRef={playerRef}
-                  onVideoError={handleVideoError}
-                />
+                <>
+                  <YouTubePlayer
+                    videoId={roomState.currentVideo.videoId}
+                    isPlaying={roomState.isPlaying}
+                    currentTime={roomState.currentTime}
+                    onStateChange={handlePlayerStateChange}
+                    isMuted={isMuted}
+                    playerRef={playerRef}
+                    onVideoError={handleVideoError}
+                  />
+                  {isVideoChanging && (
+                    <div className="absolute inset-0 bg-black/70 flex items-center justify-center z-10">
+                      <div className="text-center">
+                        <Loader2 className="h-8 w-8 animate-spin mx-auto mb-2 text-primary" />
+                        <p className="text-white">비디오 로딩 중...</p>
+                      </div>
+                    </div>
+                  )}
+                </>
               ) : (
                 <div className="absolute inset-0 flex flex-col items-center justify-center text-white bg-zinc-900">
                   <Youtube className="h-16 w-16 mb-4 text-red-600" />

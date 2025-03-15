@@ -29,6 +29,9 @@ export function YouTubePlayer({
   const [isReady, setIsReady] = useState(false)
   const [isPlayerMounted, setIsPlayerMounted] = useState(false)
   const [initialPlayTriggered, setInitialPlayTriggered] = useState(false)
+  
+  // 비디오 ID 변경 감지를 위한 ref
+  const previousVideoIdRef = useRef<string>(videoId)
 
   // Handle player ready
   const onReady = (event: any) => {
@@ -37,8 +40,22 @@ export function YouTubePlayer({
       setIsReady(true)
       setIsPlayerMounted(true)
 
-      // 초기 시간 설정은 onReady에서 직접 하지 않고 useEffect에서 처리
-      // 초기 음소거 설정도 useEffect에서 처리
+      // 초기 음소거 설정
+      if (isMuted) {
+        event.target.mute();
+      } else {
+        event.target.unMute();
+      }
+      
+      // 초기 시간 설정
+      if (currentTime > 0) {
+        event.target.seekTo(currentTime);
+      }
+      
+      // 비디오가 준비되면 재생 상태에 따라 즉시 재생
+      if (isPlaying) {
+        event.target.playVideo();
+      }
     } catch (err) {
       console.error("Error in onReady:", err)
     }
@@ -101,64 +118,41 @@ export function YouTubePlayer({
     }
   };
 
-  // 초기 설정 (시간, 음소거)
+  // 비디오 ID가 변경되면 에러 상태 초기화
   useEffect(() => {
-    if (!isReady || !isPlayerMounted) return;
-    
-    // 약간의 지연을 두고 초기 설정 적용
-    const timer = setTimeout(() => {
-      safePlayerCall((player) => {
-        // 초기 시간 설정
-        if (currentTime > 0) {
-          player.seekTo(currentTime);
-        }
-        
-        // 초기 음소거 설정
-        if (isMuted) {
-          player.mute();
-        } else {
-          player.unMute();
-        }
-      });
-    }, 500);
-    
-    return () => clearTimeout(timer);
-  }, [isReady, isPlayerMounted, currentTime, isMuted]);
+    if (previousVideoIdRef.current !== videoId) {
+      setError(null);
+      setIsReady(false);
+      setInitialPlayTriggered(false);
+      previousVideoIdRef.current = videoId;
+    }
+  }, [videoId]);
 
   // Sync player state with component props
   useEffect(() => {
     if (!isReady || !isPlayerMounted) return;
     
-    // 약간의 지연을 두고 재생 상태 변경
-    const timer = setTimeout(() => {
-      safePlayerCall((player) => {
-        if (isPlaying) {
-          player.playVideo();
-          setInitialPlayTriggered(true);
-        } else {
-          player.pauseVideo();
-        }
-      });
-    }, initialPlayTriggered ? 0 : 1000); // 첫 재생 시에는 더 긴 지연
-    
-    return () => clearTimeout(timer);
-  }, [isPlaying, isReady, isPlayerMounted, initialPlayTriggered]);
+    safePlayerCall((player) => {
+      if (isPlaying) {
+        player.playVideo();
+        setInitialPlayTriggered(true);
+      } else {
+        player.pauseVideo();
+      }
+    });
+  }, [isPlaying, isReady, isPlayerMounted]);
 
   // Handle mute/unmute
   useEffect(() => {
     if (!isReady || !isPlayerMounted) return;
     
-    const timer = setTimeout(() => {
-      safePlayerCall((player) => {
-        if (isMuted) {
-          player.mute();
-        } else {
-          player.unMute();
-        }
-      });
-    }, 300);
-    
-    return () => clearTimeout(timer);
+    safePlayerCall((player) => {
+      if (isMuted) {
+        player.mute();
+      } else {
+        player.unMute();
+      }
+    });
   }, [isMuted, isReady, isPlayerMounted]);
 
   // Sync current time
@@ -210,12 +204,13 @@ export function YouTubePlayer({
 
   return (
     <YouTube
+      key={videoId} // 비디오 ID가 변경될 때 컴포넌트를 다시 마운트하여 깨끗한 상태로 시작
       videoId={videoId}
       opts={{
         height: "100%",
         width: "100%",
         playerVars: {
-          autoplay: 0, // 자동 재생을 비활성화하고 수동으로 제어
+          autoplay: 1, // 자동 재생 활성화 (onReady에서 제어)
           modestbranding: 1,
           rel: 0,
           showinfo: 0,
