@@ -36,6 +36,49 @@ const httpServer = createServer((req, res) => {
     return
   }
 
+  // 방 생성 엔드포인트
+  if (parsedUrl.pathname === "/rooms" && req.method === "POST") {
+    let body = "";
+    req.on("data", chunk => {
+      body += chunk.toString();
+    });
+    req.on("end", () => {
+      try {
+        const roomData = JSON.parse(body);
+        const { roomId, roomName, description, isPasswordProtected, password, createdBy, playlist } = roomData;
+
+        // 새로운 방 생성
+        rooms.set(roomId, {
+          roomId,
+          roomName,
+          hostId: createdBy?.id || "",
+          users: [],
+          currentVideo: playlist?.length > 0 ? {
+            id: playlist[0].id,
+            videoId: playlist[0].videoId,
+            title: playlist[0].title,
+            thumbnailUrl: playlist[0].thumbnailUrl
+          } : null,
+          playlist: playlist || [], // 플레이리스트 전체를 그대로 사용
+          isPlaying: false,
+          currentTime: 0,
+          messages: [],
+          isPasswordProtected,
+          createdAt: Date.now(),
+          autoplay: true,
+        });
+
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ success: true }));
+      } catch (error) {
+        console.error("Error creating room:", error);
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Failed to create room" }));
+      }
+    });
+    return;
+  }
+
   res.writeHead(404)
   res.end("Not found")
 })

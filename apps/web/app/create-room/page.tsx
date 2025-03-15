@@ -48,6 +48,12 @@ type Playlist = {
     medium: { url: string }
     high: { url: string }
   }
+  videos?: Array<{
+    id: string
+    videoId: string
+    title: string
+    thumbnailUrl: string
+  }>
 }
 
 export default function CreateRoomPage() {
@@ -69,33 +75,46 @@ export default function CreateRoomPage() {
 
   // Handle form submission
   async function onSubmit(values: z.infer<typeof formSchema>) {
+    console.log('🎵 선택된 플레이리스트:', selectedPlaylist?.videos?.map(video => ({
+      id: video.id,
+      videoId: video.videoId,
+      title: video.title,
+      thumbnailUrl: video.thumbnailUrl
+    })));
     try {
-      // Here you would typically make an API call to create the room
-      console.log("Creating room with values:", values)
+      // API 호출을 통해 방 생성
+      const response = await fetch('/api/rooms', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          ...values,
+          playlist: selectedPlaylist?.videos?.map(video => ({
+            id: video.id,
+            videoId: video.videoId,
+            title: video.title,
+            thumbnailUrl: video.thumbnailUrl
+          })) || [], // 비디오 목록을 VideoItem 형식으로 변환
+          createdBy: isSignedIn
+            ? {
+                id: user.id,
+                name: `${user.firstName} ${user.lastName}`,
+                email: user.primaryEmailAddress?.emailAddress,
+                image: user.imageUrl,
+              }
+            : null,
+        }),
+      });
 
-      // Include user information if logged in
-      const roomData = {
-        ...values,
-        playlist: selectedPlaylist,
-        createdBy: isSignedIn
-          ? {
-              id: user.id,
-              name: `${user.firstName} ${user.lastName}`,
-              email: user.primaryEmailAddress?.emailAddress,
-              image: user.imageUrl,
-            }
-          : null,
+      if (!response.ok) {
+        throw new Error('Failed to create room');
       }
 
-      console.log("Room data with user info:", roomData)
-
-      // Mock API call - in a real app, replace with actual API call
-      const roomId = Math.random().toString(36).substring(2, 9)
-
-      // Redirect to the newly created room
-      router.push(`/room/${roomId}`)
+      const data = await response.json();
+      router.push(`/room/${data.roomId}`);
     } catch (error) {
-      console.error("Failed to create room:", error)
+      console.error("Failed to create room:", error);
     }
   }
 

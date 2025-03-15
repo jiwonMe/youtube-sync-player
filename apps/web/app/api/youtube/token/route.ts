@@ -25,8 +25,6 @@ export async function GET() {
 
     // Google OAuth 토큰 가져오기
     const { data } = await clerk.users.getUserOauthAccessToken(userId, "google")
-
-    console.log(data)
     const token = data[0]
 
     if (!token?.token) {

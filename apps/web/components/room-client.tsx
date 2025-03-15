@@ -1068,7 +1068,7 @@ function PlaylistPanel({
           Array(3)
             .fill(0)
             .map((_, i) => (
-              <div key={i} className="flex p-3 border-b gap-2">
+              <div key={`skeleton-${i}`} className="flex p-3 border-b gap-2">
                 <Skeleton className="h-20 w-28 rounded-md" />
                 <div className="flex-1">
                   <Skeleton className="h-4 w-full mb-2" />
@@ -1147,7 +1147,7 @@ function UsersPanel({ users, hostId, isLoading }: UsersPanelProps) {
         Array(3)
           .fill(0)
           .map((_, i) => (
-            <div key={i} className="flex items-center p-2 mb-1">
+            <div key={`user-skeleton-${i}`} className="flex items-center p-2 mb-1">
               <Skeleton className="h-8 w-8 rounded-full mr-2" />
               <Skeleton className="h-4 w-24" />
             </div>

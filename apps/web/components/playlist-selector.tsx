@@ -8,7 +8,7 @@ import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { fetchUserPlaylists } from "@/services/youtube-service"
+import { fetchUserPlaylists, fetchPlaylistItems } from "@/services/youtube-service"
 
 type Playlist = {
   id: string
@@ -19,7 +19,22 @@ type Playlist = {
     medium: { url: string }
     high: { url: string }
   }
+  videos?: Array<{
+    id: string
+    videoId: string
+    title: string
+    thumbnailUrl: string
+  }>
 }
+
+type PlaylistVideo = {
+  id: string;
+  videoId: string;
+  title: string;
+  thumbnails: {
+    default: { url: string };
+  };
+};
 
 interface PlaylistSelectorProps {
   onSelect: (playlist: Playlist) => void
@@ -79,10 +94,28 @@ export function PlaylistSelector({ onSelect }: PlaylistSelectorProps) {
     }
   }, [open, accessToken, playlists.length])
 
-  const handleSelect = (playlist: Playlist) => {
-    setSelectedPlaylist(playlist)
-    onSelect(playlist)
-    setOpen(false)
+  const handleSelect = async (playlist: Playlist) => {
+    try {
+      // 플레이리스트의 비디오 목록 가져오기
+      if (accessToken) {
+        const videos = await fetchPlaylistItems(accessToken, playlist.id);
+        console.log('가져온 비디오 목록:', videos); // 디버깅용 로그 추가
+        const playlistWithVideos = {
+          ...playlist,
+          videos
+        };
+        console.log('최종 플레이리스트:', playlistWithVideos); // 디버깅용 로그 추가
+        setSelectedPlaylist(playlistWithVideos);
+        onSelect(playlistWithVideos);
+        setOpen(false);
+      }
+    } catch (error) {
+      console.error("Failed to fetch playlist videos:", error);
+      // 에러가 발생해도 일단 플레이리스트는 선택되도록 함
+      setSelectedPlaylist(playlist);
+      onSelect(playlist);
+      setOpen(false);
+    }
   }
 
   if (!isSignedIn) {

@@ -44,8 +44,32 @@ export function YouTubePlayer({
 
   // Handle player error
   const onError = (event: any) => {
-    console.error("YouTube Player Error:", event)
-    setError("Error loading video. Please try another video.")
+    console.error("YouTube Player Error:", {
+      data: event.data,
+      target: event.target,
+      error: {
+        code: event.data,
+        message: getErrorMessage(event.data)
+      }
+    });
+    setError(getErrorMessage(event.data));
+  }
+
+  // Get error message based on error code
+  const getErrorMessage = (errorCode: number) => {
+    switch (errorCode) {
+      case 2:
+        return "Invalid parameter in the player URL.";
+      case 5:
+        return "The requested video content cannot be played in an HTML5 player.";
+      case 100:
+        return "The video requested was not found. This error occurs when a video has been removed or marked as private.";
+      case 101:
+      case 150:
+        return "The video owner does not allow it to be played in embedded players.";
+      default:
+        return "An error occurred while loading the video. Please try another video.";
+    }
   }
 
   // 플레이어 메서드를 안전하게 호출하는 헬퍼 함수
