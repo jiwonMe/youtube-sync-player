@@ -18,6 +18,7 @@ import { Switch } from "@/components/ui/switch"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { PlaylistSelector } from "@/components/playlist-selector"
 import { Separator } from "@/components/ui/separator"
+import { ScrollArea } from "@/components/ui/scroll-area"
 
 // Form validation schema
 const formSchema = z.object({
@@ -127,7 +128,7 @@ export default function CreateRoomPage() {
   }
 
   return (
-    <div className="container max-w-md py-10">
+    <div className="container max-w-md py-10 mx-auto">
       <Card>
         <CardHeader>
           <div className="flex items-center mb-2">
@@ -197,9 +198,45 @@ export default function CreateRoomPage() {
                 <Separator />
                 <PlaylistSelector onSelect={handlePlaylistSelect} />
                 {selectedPlaylist && (
-                  <div className="text-sm text-muted-foreground">
-                    Selected: <span className="font-medium">{selectedPlaylist.title}</span>
-                  </div>
+                  <>
+                    <div className="text-sm text-muted-foreground">
+                      Selected: <span className="font-medium">{selectedPlaylist.title}</span>
+                    </div>
+                    {selectedPlaylist.videos && selectedPlaylist.videos.length > 0 && (
+                      <div className="mt-2 border rounded-md">
+                        <div className="p-2 border-b bg-muted/50">
+                          <span className="text-sm font-medium">
+                            {selectedPlaylist.videos.length} {selectedPlaylist.videos.length === 1 ? "video" : "videos"} in playlist
+                          </span>
+                        </div>
+                        <ScrollArea className="h-[200px]">
+                          <div className="p-2">
+                            {selectedPlaylist.videos.map((video) => (
+                              <div 
+                                key={video.id} 
+                                className="flex p-2 mb-2 hover:bg-muted/50 rounded-md transition-colors"
+                              >
+                                <div className="relative w-24 h-14 rounded overflow-hidden flex-shrink-0">
+                                  <img
+                                    src={video.thumbnailUrl || "/placeholder.svg"}
+                                    alt={video.title}
+                                    className="object-cover w-full h-full"
+                                  />
+                                </div>
+                                <div className="flex-1 min-w-0 ml-3">
+                                  <h4 className="font-medium text-sm line-clamp-2">{video.title}</h4>
+                                  <div className="flex items-center mt-1">
+                                    <Youtube className="h-3 w-3 text-red-600 mr-1" />
+                                    <span className="text-xs text-muted-foreground">YouTube</span>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </ScrollArea>
+                      </div>
+                    )}
+                  </>
                 )}
                 <Separator />
               </div>

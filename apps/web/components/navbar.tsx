@@ -14,7 +14,7 @@ export function Navbar() {
 
   return (
     <header className="w-full border-b bg-background">
-      <div className="container flex h-16 items-center justify-between px-4 md:px-6">
+      <div className="flex h-16 items-center justify-between px-4 md:px-6 mx-auto">
         <Link href="/" className="flex items-center gap-2 font-bold text-xl">
           <Image src="/logo.svg" alt="Que Logo" width={32} height={32} />
           <span className="hidden sm:inline-block">Que</span>

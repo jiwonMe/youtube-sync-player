@@ -23,7 +23,12 @@ import {
   ExternalLink,
   Settings,
   Repeat,
+  GripVertical,
+  ArrowUp,
+  ArrowDown,
 } from "lucide-react"
+// @ts-ignore - 패키지가 설치되지 않았을 때 타입 오류 무시
+import { DragDropContext, Droppable, Draggable, DroppableProvided, DraggableProvided, DraggableStateSnapshot, DropResult } from "@hello-pangea/dnd"
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Button } from "@/components/ui/button"
@@ -216,6 +221,14 @@ export default function RoomClient({ roomId }: { roomId: string }) {
       }))
     })
 
+    // Listen for playlist reordering
+    socketIo.on("playlist:reorder", (playlist) => {
+      setRoomState((prev) => ({
+        ...prev,
+        playlist,
+      }))
+    })
+
     // Listen for chat messages
     socketIo.on("chat:message", (message) => {
       setRoomState((prev) => ({
@@ -312,6 +325,16 @@ export default function RoomClient({ roomId }: { roomId: string }) {
     }
   }
 
+  // 비디오 에러 처리 함수
+  const handleVideoError = (errorCode: number) => {
+    console.error(`YouTube 비디오 에러 발생: ${errorCode}`);
+    
+    // 에러 발생 시 다음 비디오로 자동 전환
+    setTimeout(() => {
+      handleNextVideo(true); // 강제로 다음 비디오로 넘어가도록 true 전달
+    }, 1000); // 1초 후 다음 비디오로 전환 (에러 메시지를 잠시 표시하기 위함)
+  }
+
   // Handle play/pause
   const handlePlayPause = () => {
     const newIsPlaying = !roomState.isPlaying
@@ -330,12 +353,17 @@ export default function RoomClient({ roomId }: { roomId: string }) {
   }
 
   // Handle next video
-  const handleNextVideo = () => {
+  const handleNextVideo = (forceNext: boolean = false) => {
     const currentIndex = roomState.playlist.findIndex((video) => video.id === roomState.currentVideo?.id)
 
     // 자동 재생이 꺼져 있고, 비디오가 끝났을 때 호출된 경우 다음 비디오로 넘어가지 않음
-    if (!roomState.autoplay && playerRef.current && playerRef.current.getPlayerState && playerRef.current.getPlayerState() === 0) {
-      return
+    // 단, 사용자가 직접 다음 버튼을 클릭한 경우나 forceNext가 true인 경우는 예외
+    const isVideoEnded = playerRef.current && playerRef.current.getPlayerState && playerRef.current.getPlayerState() === 0;
+    const isAutoplayDisabled = !roomState.autoplay;
+    const isUserInitiated = !isVideoEnded || forceNext; // 비디오가 끝나지 않은 상태에서 호출되거나 forceNext가 true인 경우
+    
+    if (isAutoplayDisabled && isVideoEnded && !isUserInitiated) {
+      return;
     }
 
     if (currentIndex < roomState.playlist.length - 1) {
@@ -345,15 +373,23 @@ export default function RoomClient({ roomId }: { roomId: string }) {
       setRoomState((prev) => ({
         ...prev,
         isPlaying: false,
+        currentVideo: null, // 현재 비디오를 null로 설정하여 플레이어 초기화
       }));
       
-      // 약간의 지연 후 비디오 변경 이벤트 발송
-      setTimeout(() => {
-        // Emit video change
-        if (socket) {
-          socket.emit("video:change", nextVideo.id)
-        }
-      }, 100);
+      // 즉시 다음 비디오로 변경하고 서버에 알림
+      if (socket) {
+        socket.emit("video:change", nextVideo.id);
+        
+        // 로컬 상태도 즉시 업데이트하여 UI 반응성 향상
+        setTimeout(() => {
+          setRoomState((prev) => ({
+            ...prev,
+            currentVideo: nextVideo,
+            currentTime: 0,
+            isPlaying: true,
+          }));
+        }, 50);
+      }
     }
   }
 
@@ -382,15 +418,23 @@ export default function RoomClient({ roomId }: { roomId: string }) {
     setRoomState((prev) => ({
       ...prev,
       isPlaying: false,
+      currentVideo: null, // 현재 비디오를 null로 설정하여 플레이어 초기화
     }));
     
-    // 약간의 지연 후 비디오 변경 이벤트 발송
-    setTimeout(() => {
-      // Emit video change
-      if (socket) {
-        socket.emit("video:change", video.id);
-      }
-    }, 100);
+    // 즉시 비디오 변경 이벤트 발송
+    if (socket) {
+      socket.emit("video:change", video.id);
+      
+      // 로컬 상태도 즉시 업데이트하여 UI 반응성 향상
+      setTimeout(() => {
+        setRoomState((prev) => ({
+          ...prev,
+          currentVideo: video,
+          currentTime: 0,
+          isPlaying: true,
+        }));
+      }, 50);
+    }
   }
 
   // Handle video removal from playlist
@@ -531,6 +575,35 @@ export default function RoomClient({ roomId }: { roomId: string }) {
     }
   }
 
+  // Handle playlist reordering
+  const handlePlaylistReorder = (result: DropResult) => {
+    // 드롭이 취소된 경우 (드롭 영역 밖으로 드래그된 경우)
+    if (!result.destination) return;
+    
+    // 위치가 변경되지 않은 경우
+    if (result.destination.index === result.source.index) return;
+    
+    // 플레이리스트 복사
+    const newPlaylist = [...roomState.playlist];
+    
+    // 드래그된 아이템 제거
+    const [movedItem] = newPlaylist.splice(result.source.index, 1);
+    
+    // 새 위치에 아이템 삽입
+    newPlaylist.splice(result.destination.index, 0, movedItem);
+    
+    // 로컬 상태 업데이트
+    setRoomState(prev => ({
+      ...prev,
+      playlist: newPlaylist
+    }));
+    
+    // 서버에 변경사항 전송
+    if (socket) {
+      socket.emit("playlist:reorder", newPlaylist);
+    }
+  };
+
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)]">
       {/* Room info bar */}
@@ -601,6 +674,7 @@ export default function RoomClient({ roomId }: { roomId: string }) {
                 onStateChange={handlePlayerStateChange}
                 isMuted={isMuted}
                 playerRef={playerRef}
+                onVideoError={handleVideoError}
               />
             ) : (
               <div className="absolute inset-0 flex flex-col items-center justify-center text-white bg-zinc-900">
@@ -681,7 +755,7 @@ export default function RoomClient({ roomId }: { roomId: string }) {
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={handleNextVideo}
+                      onClick={() => handleNextVideo()}
                       disabled={
                         !roomState.currentVideo ||
                         isLoading ||
@@ -834,6 +908,184 @@ export default function RoomClient({ roomId }: { roomId: string }) {
             </div>
           </div>
 
+          {/* 다음 재생 예정 플레이리스트 - YouTube 플레이어 아래 공간 활용 */}
+          {roomState.currentVideo && roomState.playlist.length > 1 && (
+            <div className="bg-background border-t hidden sm:block">
+              <div className="p-2 bg-muted/30 flex items-center justify-between sticky top-0 z-10">
+                <span className="text-sm font-medium flex items-center">
+                  <List className="h-4 w-4 mr-2 text-muted-foreground" />
+                  다음 재생 예정
+                </span>
+                <Dialog open={showAddVideoDialog} onOpenChange={setShowAddVideoDialog}>
+                  <DialogTrigger asChild>
+                    <Button size="sm" variant="outline" className="h-7">
+                      <Plus className="h-3 w-3 mr-1" />
+                      <span className="hidden sm:inline-block">Add Video</span>
+                      <span className="sm:hidden">Add</span>
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent>
+                    <DialogHeader>
+                      <DialogTitle>Add YouTube Video</DialogTitle>
+                      <DialogDescription>Enter a YouTube video URL to add it to the playlist.</DialogDescription>
+                    </DialogHeader>
+                    <div className="grid gap-4 py-4">
+                      <div className="flex items-center gap-2">
+                        <Input
+                          placeholder="https://www.youtube.com/watch?v=..."
+                          value={videoUrl}
+                          onChange={(e) => setVideoUrl(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => setShowAddVideoDialog(false)}>
+                        Cancel
+                      </Button>
+                      <Button onClick={handleAddVideo} disabled={isAddingVideo || !videoUrl.trim()}>
+                        {isAddingVideo ? "Adding..." : "Add Video"}
+                      </Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
+              </div>
+              <ScrollArea className="max-h-[160px] md:max-h-[160px] sm:max-h-[140px]">
+                <DragDropContext onDragEnd={handlePlaylistReorder}>
+                  <Droppable droppableId="upcoming-playlist" direction="horizontal">
+                    {(provided: DroppableProvided) => (
+                      <div 
+                        className="flex overflow-x-auto p-2 gap-3 pb-4"
+                        ref={provided.innerRef}
+                        {...provided.droppableProps}
+                      >
+                        {roomState.playlist
+                          .filter(video => video.id !== roomState.currentVideo?.id)
+                          .slice(0, 10)
+                          .map((video, index) => (
+                            <Draggable 
+                              key={`upcoming-${video.id}`} 
+                              draggableId={`upcoming-${video.id}`} 
+                              index={index}
+                              isDragDisabled={!isHost}
+                            >
+                              {(provided: DraggableProvided, snapshot: DraggableStateSnapshot) => (
+                                <div
+                                  ref={provided.innerRef}
+                                  {...provided.draggableProps}
+                                  className={`flex-shrink-0 w-[160px] sm:w-[180px] md:w-[200px] cursor-pointer hover:bg-muted/40 rounded-md transition-colors p-2 group ${
+                                    snapshot.isDragging ? "bg-muted/60 shadow-lg" : ""
+                                  }`}
+                                  onClick={() => handleVideoSelect(video)}
+                                >
+                                  <div className="relative w-full aspect-video rounded-md overflow-hidden mb-2">
+                                    <img
+                                      src={video.thumbnailUrl || "/placeholder.svg"}
+                                      alt={video.title}
+                                      className="object-cover w-full h-full"
+                                    />
+                                    <div className="absolute top-1 left-1 bg-black/70 text-white text-xs px-1.5 py-0.5 rounded">
+                                      {index + 1}
+                                    </div>
+                                    {isHost && (
+                                      <div 
+                                        {...provided.dragHandleProps}
+                                        className="absolute top-1 right-1 bg-black/70 text-white p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                                        onClick={(e) => e.stopPropagation()}
+                                      >
+                                        <GripVertical className="h-3 w-3" />
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div className="flex justify-between items-start">
+                                    <h4 className="font-medium text-sm line-clamp-2 pr-2">{video.title}</h4>
+                                    <div className="flex items-center">
+                                      {isHost && (
+                                        <div className="flex opacity-0 group-hover:opacity-100 transition-opacity mr-1">
+                                          <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-5 w-5 hover:bg-muted"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              // 현재 플레이리스트에서 이 비디오의 실제 인덱스를 찾습니다
+                                              const actualIndex = roomState.playlist.findIndex(v => v.id === video.id);
+                                              if (actualIndex > 0) {
+                                                const newPlaylist = [...roomState.playlist];
+                                                [newPlaylist[actualIndex], newPlaylist[actualIndex - 1]] = 
+                                                  [newPlaylist[actualIndex - 1], newPlaylist[actualIndex]];
+                                                
+                                                // 서버에 변경사항 전송
+                                                if (socket) {
+                                                  socket.emit("playlist:reorder", newPlaylist);
+                                                }
+                                                
+                                                // 로컬 상태 업데이트
+                                                setRoomState(prev => ({
+                                                  ...prev,
+                                                  playlist: newPlaylist
+                                                }));
+                                              }
+                                            }}
+                                            disabled={roomState.playlist.findIndex(v => v.id === video.id) === 0}
+                                          >
+                                            <ArrowUp className="h-3 w-3 text-muted-foreground" />
+                                          </Button>
+                                          <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-5 w-5 hover:bg-muted"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              // 현재 플레이리스트에서 이 비디오의 실제 인덱스를 찾습니다
+                                              const actualIndex = roomState.playlist.findIndex(v => v.id === video.id);
+                                              if (actualIndex < roomState.playlist.length - 1) {
+                                                const newPlaylist = [...roomState.playlist];
+                                                [newPlaylist[actualIndex], newPlaylist[actualIndex + 1]] = 
+                                                  [newPlaylist[actualIndex + 1], newPlaylist[actualIndex]];
+                                                
+                                                // 서버에 변경사항 전송
+                                                if (socket) {
+                                                  socket.emit("playlist:reorder", newPlaylist);
+                                                }
+                                                
+                                                // 로컬 상태 업데이트
+                                                setRoomState(prev => ({
+                                                  ...prev,
+                                                  playlist: newPlaylist
+                                                }));
+                                              }
+                                            }}
+                                            disabled={roomState.playlist.findIndex(v => v.id === video.id) === roomState.playlist.length - 1}
+                                          >
+                                            <ArrowDown className="h-3 w-3 text-muted-foreground" />
+                                          </Button>
+                                        </div>
+                                      )}
+                                      {isHost && (
+                                        <Button
+                                          variant="ghost"
+                                          size="icon"
+                                          className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive/10"
+                                          onClick={(e) => handleRemoveVideo(video.id, e)}
+                                        >
+                                          <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
+                                        </Button>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                            </Draggable>
+                          ))}
+                        {provided.placeholder}
+                      </div>
+                    )}
+                  </Droppable>
+                </DragDropContext>
+              </ScrollArea>
+            </div>
+          )}
+
           {/* Mobile playlist/chat (shows only on mobile when activated) */}
           {showMobile && (
             <div className="md:hidden flex-1 flex flex-col overflow-hidden border-t">
@@ -898,6 +1150,8 @@ export default function RoomClient({ roomId }: { roomId: string }) {
                   handleRemoveVideo={handleRemoveVideo}
                   isLoading={isLoading}
                   isHost={isHost}
+                  handlePlaylistReorder={handlePlaylistReorder}
+                  socket={socket}
                 />
               ) : (
                 <UsersPanel users={roomState.users} hostId={roomState.hostId} isLoading={isLoading} />
@@ -907,49 +1161,53 @@ export default function RoomClient({ roomId }: { roomId: string }) {
         </div>
 
         {/* Sidebar - for tablet and desktop only */}
-        <div className="hidden md:flex w-80 border-l bg-card flex-shrink-0">
-          <Tabs defaultValue="playlist" className="flex flex-col w-full">
-            <TabsList className="bg-muted">
-              <TabsTrigger value="playlist" className="flex-1">
+        <div className="hidden md:flex w-80 border-l bg-card flex-shrink-0 flex-col h-full">
+          <Tabs defaultValue="playlist" className="flex flex-col w-full h-full">
+            <TabsList className="bg-muted h-12 grid grid-cols-3 p-1 flex-shrink-0">
+              <TabsTrigger value="playlist" className="flex items-center justify-center data-[state=active]:bg-background data-[state=active]:shadow-sm">
                 <List className="h-4 w-4 mr-2" />
-                Playlist
+                <span>Playlist</span>
               </TabsTrigger>
-              <TabsTrigger value="chat" className="flex-1">
+              <TabsTrigger value="chat" className="flex items-center justify-center data-[state=active]:bg-background data-[state=active]:shadow-sm">
                 <MessageSquare className="h-4 w-4 mr-2" />
-                Chat
+                <span>Chat</span>
               </TabsTrigger>
-              <TabsTrigger value="users" className="flex-1">
+              <TabsTrigger value="users" className="flex items-center justify-center data-[state=active]:bg-background data-[state=active]:shadow-sm">
                 <Users className="h-4 w-4 mr-2" />
-                Users
+                <span>Users</span>
               </TabsTrigger>
             </TabsList>
 
-            <TabsContent value="playlist" className="flex-1 flex flex-col overflow-hidden p-0 m-0">
-              <PlaylistPanel
-                playlist={roomState.playlist}
-                currentVideo={roomState.currentVideo}
-                handleVideoSelect={handleVideoSelect}
-                handleRemoveVideo={handleRemoveVideo}
-                isLoading={isLoading}
-                isHost={isHost}
-              />
-            </TabsContent>
+            <div className="flex-1 overflow-hidden">
+              <TabsContent value="playlist" className="h-[calc(100%-3rem)] data-[state=active]:flex data-[state=active]:flex-col hidden">
+                <PlaylistPanel
+                  playlist={roomState.playlist}
+                  currentVideo={roomState.currentVideo}
+                  handleVideoSelect={handleVideoSelect}
+                  handleRemoveVideo={handleRemoveVideo}
+                  isLoading={isLoading}
+                  isHost={isHost}
+                  handlePlaylistReorder={handlePlaylistReorder}
+                  socket={socket}
+                />
+              </TabsContent>
 
-            <TabsContent value="chat" className="flex-1 flex flex-col overflow-hidden p-0 m-0">
-              <ChatPanel
-                messages={roomState.messages}
-                chatInput={chatInput}
-                setChatInput={setChatInput}
-                handleChatSubmit={handleChatSubmit}
-                formatTimestamp={formatTimestamp}
-                isLoading={isLoading}
-                chatEndRef={chatEndRef}
-              />
-            </TabsContent>
+              <TabsContent value="chat" className="h-[calc(100%-3rem)] data-[state=active]:flex data-[state=active]:flex-col hidden">
+                <ChatPanel
+                  messages={roomState.messages}
+                  chatInput={chatInput}
+                  setChatInput={setChatInput}
+                  handleChatSubmit={handleChatSubmit}
+                  formatTimestamp={formatTimestamp}
+                  isLoading={isLoading}
+                  chatEndRef={chatEndRef}
+                />
+              </TabsContent>
 
-            <TabsContent value="users" className="flex-1 flex flex-col overflow-hidden p-0 m-0">
-              <UsersPanel users={roomState.users} hostId={roomState.hostId} isLoading={isLoading} />
-            </TabsContent>
+              <TabsContent value="users" className="h-[calc(100%-3rem)] data-[state=active]:flex data-[state=active]:flex-col hidden">
+                <UsersPanel users={roomState.users} hostId={roomState.hostId} isLoading={isLoading} />
+              </TabsContent>
+            </div>
           </Tabs>
         </div>
       </div>
@@ -978,57 +1236,71 @@ function ChatPanel({
   chatEndRef,
 }: ChatPanelProps) {
   return (
-    <div className="flex-1 flex flex-col">
-      <ScrollArea className="flex-1 p-3">
-        {isLoading ? (
-          Array(2)
-            .fill(0)
-            .map((_, i) => (
-              <div key={i} className="mb-4">
-                <div className="flex items-center mb-1">
-                  <Skeleton className="h-6 w-6 rounded-full mr-2" />
-                  <Skeleton className="h-4 w-20 mr-2" />
-                  <Skeleton className="h-3 w-10" />
+    <div className="flex flex-col w-full h-full overflow-hidden">
+      <ScrollArea className="flex-1 overflow-auto">
+        <div className="sticky top-0 z-10 p-2 bg-background/80 backdrop-blur-sm border-b flex items-center justify-between">
+          <span className="text-sm font-medium flex items-center">
+            <MessageSquare className="h-4 w-4 mr-2 text-muted-foreground" />
+            Chat
+          </span>
+        </div>
+        
+        <div className="p-3">
+          {isLoading ? (
+            Array(2)
+              .fill(0)
+              .map((_, i) => (
+                <div key={i} className="mb-4">
+                  <div className="flex items-center mb-1">
+                    <Skeleton className="h-6 w-6 rounded-full mr-2" />
+                    <Skeleton className="h-4 w-20 mr-2" />
+                    <Skeleton className="h-3 w-10" />
+                  </div>
+                  <Skeleton className="h-10 w-full" />
                 </div>
-                <Skeleton className="h-10 w-full" />
+              ))
+          ) : messages.length > 0 ? (
+            messages.map((msg) => (
+              <div key={msg.id} className="mb-4 group hover:bg-muted/30 p-2 rounded-md transition-colors">
+                <div className="flex items-center mb-1">
+                  <Avatar className="h-6 w-6 mr-2 ring-1 ring-muted">
+                    <AvatarImage src={msg.user.image} alt={msg.user.name} />
+                    <AvatarFallback>{msg.user.name[0]}</AvatarFallback>
+                  </Avatar>
+                  <span className="font-medium text-sm">{msg.user.name}</span>
+                  <span className="text-xs text-muted-foreground ml-2">{formatTimestamp(msg.timestamp)}</span>
+                  {msg.user.isHost && (
+                    <Badge variant="outline" className="ml-2 text-xs py-0 h-4">
+                      <Crown className="h-3 w-3 mr-1 text-amber-500" />
+                      Host
+                    </Badge>
+                  )}
+                </div>
+                <p className="text-sm pl-8 break-words">{msg.message}</p>
               </div>
             ))
-        ) : messages.length > 0 ? (
-          messages.map((msg) => (
-            <div key={msg.id} className="mb-4 group">
-              <div className="flex items-center mb-1">
-                <Avatar className="h-6 w-6 mr-2">
-                  <AvatarImage src={msg.user.image} alt={msg.user.name} />
-                  <AvatarFallback>{msg.user.name[0]}</AvatarFallback>
-                </Avatar>
-                <span className="font-medium text-sm">{msg.user.name}</span>
-                <span className="text-xs text-muted-foreground ml-2">{formatTimestamp(msg.timestamp)}</span>
+          ) : (
+            <div className="flex items-center justify-center h-[calc(100%-40px)] text-muted-foreground">
+              <div className="text-center">
+                <MessageSquare className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                <p>No messages yet</p>
+                <p className="text-xs mt-1">Be the first to say something!</p>
               </div>
-              <p className="text-sm pl-8 break-words">{msg.message}</p>
             </div>
-          ))
-        ) : (
-          <div className="flex items-center justify-center h-full text-muted-foreground">
-            <div className="text-center">
-              <MessageSquare className="h-8 w-8 mx-auto mb-2 opacity-50" />
-              <p>No messages yet</p>
-              <p className="text-xs mt-1">Be the first to say something!</p>
-            </div>
-          </div>
-        )}
-        <div ref={chatEndRef} />
+          )}
+          <div ref={chatEndRef} />
+        </div>
       </ScrollArea>
 
-      <div className="p-3 border-t">
+      <div className="p-3 border-t flex-shrink-0">
         <form onSubmit={handleChatSubmit} className="flex gap-2">
           <Input
             value={chatInput}
             onChange={(e) => setChatInput(e.target.value)}
             placeholder="Type a message..."
-            disabled={isLoading}
             className="flex-1"
           />
-          <Button type="submit" size="sm" disabled={!chatInput.trim() || isLoading}>
+          <Button type="submit" size="sm" disabled={!chatInput.trim()}>
             Send
           </Button>
         </form>
@@ -1045,6 +1317,8 @@ interface PlaylistPanelProps {
   handleRemoveVideo: (videoId: string, e: React.MouseEvent) => void
   isLoading: boolean
   isHost: boolean | undefined
+  handlePlaylistReorder?: (result: DropResult) => void
+  socket?: Socket | null
 }
 
 function PlaylistPanel({
@@ -1054,16 +1328,19 @@ function PlaylistPanel({
   handleRemoveVideo,
   isLoading,
   isHost,
+  handlePlaylistReorder,
+  socket,
 }: PlaylistPanelProps) {
   return (
-    <div className="flex-1 flex flex-col">
-      <div className="p-2 border-b flex items-center justify-between">
-        <span className="text-sm font-medium">
-          {playlist.length} {playlist.length === 1 ? "video" : "videos"} in playlist
-        </span>
-      </div>
-
-      <ScrollArea className="flex-1">
+    <div className="flex flex-col w-full h-full overflow-hidden">
+      <ScrollArea className="flex-1 overflow-auto">
+        <div className="sticky top-0 z-10 p-2 bg-background/80 backdrop-blur-sm border-b flex items-center justify-between">
+          <span className="text-sm font-medium flex items-center">
+            <List className="h-4 w-4 mr-2 text-muted-foreground" />
+            {playlist.length} {playlist.length === 1 ? "video" : "videos"} in playlist
+          </span>
+        </div>
+        
         {isLoading ? (
           Array(3)
             .fill(0)
@@ -1077,50 +1354,153 @@ function PlaylistPanel({
               </div>
             ))
         ) : playlist.length > 0 ? (
-          playlist.map((video) => (
-            <div
-              key={video.id}
-              id={`playlist-item-${video.id}`}
-              className={`flex p-3 border-b cursor-pointer hover:bg-muted/50 group ${
-                currentVideo?.id === video.id ? "bg-muted" : ""
-              }`}
-              onClick={() => handleVideoSelect(video)}
-            >
-              <div className="relative w-28 h-16 rounded overflow-hidden flex-shrink-0">
-                <img
-                  src={video.thumbnailUrl || "/placeholder.svg?height=90&width=120"}
-                  alt={video.title}
-                  className="object-cover w-full h-full"
-                />
-                {currentVideo?.id === video.id && (
-                  <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
-                    <Badge>Playing</Badge>
-                  </div>
-                )}
-              </div>
-              <div className="ml-2 flex-1 min-w-0 flex flex-col justify-between">
-                <div className="flex justify-between items-start">
-                  <h4 className="font-medium text-sm truncate pr-2">{video.title}</h4>
-                  {isHost && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                      onClick={(e) => handleRemoveVideo(video.id, e)}
+          <DragDropContext onDragEnd={handlePlaylistReorder || (() => {})}>
+            <Droppable droppableId="playlist">
+              {(provided: DroppableProvided) => (
+                <div
+                  ref={provided.innerRef}
+                  {...provided.droppableProps}
+                >
+                  {playlist.map((video, index) => (
+                    <Draggable 
+                      key={video.id} 
+                      draggableId={video.id} 
+                      index={index}
+                      isDragDisabled={!isHost || !handlePlaylistReorder}
                     >
-                      <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
-                    </Button>
-                  )}
+                      {(provided: DraggableProvided, snapshot: DraggableStateSnapshot) => (
+                        <div
+                          ref={provided.innerRef}
+                          {...provided.draggableProps}
+                          id={`playlist-item-${video.id}`}
+                          className={`flex p-3 border-b cursor-pointer transition-colors group ${
+                            currentVideo?.id === video.id 
+                              ? "bg-muted/80 border-l-4 border-l-primary" 
+                              : "hover:bg-muted/40 border-l-4 border-l-transparent"
+                          } ${snapshot.isDragging ? "bg-muted/60 shadow-lg" : ""}`}
+                          onClick={() => handleVideoSelect(video)}
+                        >
+                          <div className="relative w-28 h-16 rounded overflow-hidden flex-shrink-0">
+                            <img
+                              src={video.thumbnailUrl || "/placeholder.svg"}
+                              alt={video.title}
+                              className="object-cover w-full h-full"
+                            />
+                            {currentVideo?.id === video.id && (
+                              <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                                <Badge variant="secondary" className="bg-primary text-primary-foreground">
+                                  Now Playing
+                                </Badge>
+                              </div>
+                            )}
+                          </div>
+                          <div className="ml-3 flex-1 min-w-0 flex flex-col justify-between">
+                            <div className="flex justify-between items-start">
+                              <h4 className="font-medium text-sm line-clamp-2 pr-2">{video.title}</h4>
+                              <div className="flex items-center">
+                                {isHost && handlePlaylistReorder && (
+                                  <div 
+                                    {...provided.dragHandleProps}
+                                    className="h-6 w-6 flex items-center justify-center mr-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <GripVertical className="h-4 w-4 text-muted-foreground" />
+                                  </div>
+                                )}
+                                {isHost && handlePlaylistReorder && (
+                                  <div className="flex opacity-0 group-hover:opacity-100 transition-opacity">
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-6 w-6 hover:bg-muted"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        // 현재 플레이리스트에서 이 비디오의 실제 인덱스를 찾습니다
+                                        const actualIndex = playlist.findIndex(v => v.id === video.id);
+                                        if (actualIndex > 0) {
+                                          const newPlaylist = [...playlist];
+                                          [newPlaylist[actualIndex], newPlaylist[actualIndex - 1]] = 
+                                            [newPlaylist[actualIndex - 1], newPlaylist[actualIndex]];
+                                          
+                                          // 서버에 변경사항 전송
+                                          if (socket) {
+                                            socket.emit("playlist:reorder", newPlaylist);
+                                          }
+                                          
+                                          // 로컬 상태 업데이트
+                                          handlePlaylistReorder({
+                                            source: { index: actualIndex, droppableId: 'playlist' },
+                                            destination: { index: actualIndex - 1, droppableId: 'playlist' },
+                                            draggableId: video.id,
+                                            type: 'DEFAULT',
+                                            mode: 'FLUID',
+                                            reason: 'DROP',
+                                            combine: null
+                                          });
+                                        }
+                                      }}
+                                      disabled={playlist.findIndex(v => v.id === video.id) === 0}
+                                    >
+                                      <ArrowUp className="h-3 w-3 text-muted-foreground" />
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-6 w-6 hover:bg-muted"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        // 현재 플레이리스트에서 이 비디오의 실제 인덱스를 찾습니다
+                                        const actualIndex = playlist.findIndex(v => v.id === video.id);
+                                        if (actualIndex < playlist.length - 1) {
+                                          const newPlaylist = [...playlist];
+                                          [newPlaylist[actualIndex], newPlaylist[actualIndex + 1]] = [newPlaylist[actualIndex + 1], newPlaylist[actualIndex]];
+                                          if (handlePlaylistReorder) {
+                                            handlePlaylistReorder({
+                                              source: { index: actualIndex, droppableId: 'playlist' },
+                                              destination: { index: actualIndex + 1, droppableId: 'playlist' },
+                                              draggableId: video.id,
+                                              type: 'DEFAULT',
+                                              mode: 'FLUID',
+                                              reason: 'DROP',
+                                              combine: null
+                                            });
+                                          }
+                                        }
+                                      }}
+                                      disabled={playlist.findIndex(v => v.id === video.id) === playlist.length - 1}
+                                    >
+                                      <ArrowDown className="h-3 w-3 text-muted-foreground" />
+                                    </Button>
+                                  </div>
+                                )}
+                                {isHost && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive/10"
+                                    onClick={(e) => handleRemoveVideo(video.id, e)}
+                                  >
+                                    <Trash2 className="h-4 w-4 text-muted-foreground hover:text-destructive" />
+                                  </Button>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex items-center mt-1">
+                              <Youtube className="h-3 w-3 text-red-600 mr-1" />
+                              <span className="text-xs text-muted-foreground">YouTube</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </Draggable>
+                  ))}
+                  {provided.placeholder}
                 </div>
-                <div className="flex items-center mt-1">
-                  <Youtube className="h-3 w-3 text-red-600 mr-1" />
-                  <span className="text-xs text-muted-foreground">YouTube</span>
-                </div>
-              </div>
-            </div>
-          ))
+              )}
+            </Droppable>
+          </DragDropContext>
         ) : (
-          <div className="flex items-center justify-center h-full text-muted-foreground p-4">
+          <div className="flex items-center justify-center h-[calc(100%-40px)] text-muted-foreground p-4">
             <div className="text-center">
               <List className="h-8 w-8 mx-auto mb-2 opacity-50" />
               <p>No videos in playlist</p>
@@ -1142,40 +1522,58 @@ interface UsersPanelProps {
 
 function UsersPanel({ users, hostId, isLoading }: UsersPanelProps) {
   return (
-    <div className="flex-1 overflow-y-auto p-2">
-      {isLoading ? (
-        Array(3)
-          .fill(0)
-          .map((_, i) => (
-            <div key={`user-skeleton-${i}`} className="flex items-center p-2 mb-1">
-              <Skeleton className="h-8 w-8 rounded-full mr-2" />
-              <Skeleton className="h-4 w-24" />
-            </div>
-          ))
-      ) : users.length > 0 ? (
-        users.map((user) => (
-          <div key={user.id} className="flex items-center p-2 hover:bg-muted rounded-md">
-            <Avatar className="h-8 w-8 mr-2">
-              <AvatarImage src={user.image} alt={user.name} />
-              <AvatarFallback>{user.name[0]}</AvatarFallback>
-            </Avatar>
-            <span className="font-medium">{user.name}</span>
-            {user.id === hostId && (
-              <Badge variant="outline" className="ml-2 flex items-center gap-1">
-                <Crown className="h-3 w-3" />
-                Host
-              </Badge>
-            )}
-          </div>
-        ))
-      ) : (
-        <div className="flex items-center justify-center h-full text-muted-foreground">
-          <div className="text-center">
-            <Users className="h-8 w-8 mx-auto mb-2 opacity-50" />
-            <p>No users in room</p>
-          </div>
+    <div className="flex flex-col w-full h-full overflow-hidden">
+      <ScrollArea className="flex-1 overflow-auto">
+        <div className="sticky top-0 z-10 p-2 bg-background/80 backdrop-blur-sm border-b flex items-center justify-between">
+          <span className="text-sm font-medium flex items-center">
+            <Users className="h-4 w-4 mr-2 text-muted-foreground" />
+            {users.length} {users.length === 1 ? "viewer" : "viewers"}
+          </span>
         </div>
-      )}
+        
+        <div className="p-3">
+          {isLoading ? (
+            Array(3)
+              .fill(0)
+              .map((_, i) => (
+                <div key={i} className="flex items-center p-2 mb-2">
+                  <Skeleton className="h-8 w-8 rounded-full mr-3" />
+                  <Skeleton className="h-4 w-32" />
+                </div>
+              ))
+          ) : (
+            <div className="space-y-2">
+              {users.map((user) => (
+                <div
+                  key={user.id}
+                  className={`flex items-center p-2 rounded-md ${
+                    user.id === hostId ? "bg-muted/50 border-l-2 border-l-amber-500" : "hover:bg-muted/30"
+                  }`}
+                >
+                  <Avatar className="h-8 w-8 mr-3 ring-1 ring-muted">
+                    <AvatarImage src={user.image} alt={user.name} />
+                    <AvatarFallback>{user.name[0]}</AvatarFallback>
+                  </Avatar>
+                  <div className="flex flex-col">
+                    <div className="flex items-center">
+                      <span className="font-medium text-sm">{user.name}</span>
+                      {user.id === hostId && (
+                        <Badge variant="outline" className="ml-2 text-xs py-0 h-4">
+                          <Crown className="h-3 w-3 mr-1 text-amber-500" />
+                          Host
+                        </Badge>
+                      )}
+                    </div>
+                    {user.id === hostId && (
+                      <span className="text-xs text-muted-foreground">Room creator</span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </ScrollArea>
     </div>
   )
 }

@@ -11,6 +11,7 @@ interface YouTubePlayerProps {
   onStateChange: (event: any) => void
   isMuted: boolean
   playerRef?: React.MutableRefObject<any>
+  onVideoError?: (errorCode: number) => void
 }
 
 export function YouTubePlayer({
@@ -20,6 +21,7 @@ export function YouTubePlayer({
   onStateChange,
   isMuted,
   playerRef,
+  onVideoError,
 }: YouTubePlayerProps) {
   const internalPlayerRef = useRef<any>(null)
   const actualPlayerRef = playerRef || internalPlayerRef
@@ -53,6 +55,11 @@ export function YouTubePlayer({
       }
     });
     setError(getErrorMessage(event.data));
+    
+    // 에러 발생 시 부모 컴포넌트에 알림
+    if (onVideoError) {
+      onVideoError(event.data);
+    }
   }
 
   // Get error message based on error code
