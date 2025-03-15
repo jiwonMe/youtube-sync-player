@@ -22,6 +22,7 @@ import {
   Youtube,
   ExternalLink,
   Settings,
+  Repeat,
 } from "lucide-react"
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -84,6 +85,7 @@ type RoomState = {
   isPlaying: boolean
   currentTime: number
   messages: ChatMessage[]
+  autoplay: boolean
 }
 
 // Mock data for initial rendering
@@ -96,6 +98,7 @@ const mockRoomData: RoomState = {
   isPlaying: false,
   currentTime: 0,
   messages: [],
+  autoplay: true,
 }
 
 // Function to connect to the room
@@ -115,7 +118,17 @@ export default function RoomClient({ roomId }: { roomId: string }) {
 
   // State
   const [socket, setSocket] = useState<Socket | null>(null)
-  const [roomState, setRoomState] = useState<RoomState>(mockRoomData)
+  const [roomState, setRoomState] = useState<RoomState>({
+    roomName: "",
+    hostId: "",
+    users: [],
+    currentVideo: null,
+    playlist: [],
+    isPlaying: false,
+    currentTime: 0,
+    messages: [],
+    autoplay: true,
+  })
   const [chatInput, setChatInput] = useState("")
   const [isMuted, setIsMuted] = useState(false)
   const [showMobile, setShowMobile] = useState<"chat" | "playlist" | "users" | null>(null)
@@ -151,7 +164,7 @@ export default function RoomClient({ roomId }: { roomId: string }) {
     })
 
     // Listen for player state changes
-    socketIo.on("player:stateChange", (data) => {
+    socketIo.on("player:stateChange", (data: { isPlaying: boolean; currentTime: number }) => {
       setRoomState((prev) => ({
         ...prev,
         isPlaying: data.isPlaying,
@@ -159,16 +172,39 @@ export default function RoomClient({ roomId }: { roomId: string }) {
       }))
     })
 
+    // Listen for autoplay toggle
+    socketIo.on("autoplay:toggle", (data: { autoplay: boolean }) => {
+      setRoomState((prev) => ({
+        ...prev,
+        autoplay: data.autoplay,
+      }))
+    })
+
     // Listen for video changes
     socketIo.on("video:change", (data) => {
       const video = roomState.playlist.find((v) => v.videoId === data.videoId)
       if (video) {
+        // 비디오 변경 시 플레이어 상태 초기화를 위해 잠시 currentVideo를 null로 설정
         setRoomState((prev) => ({
           ...prev,
-          currentVideo: video,
-          currentTime: data.currentTime,
-          isPlaying: true,
+          currentVideo: null,
         }))
+        
+        // 약간의 지연 후 새 비디오 설정
+        setTimeout(() => {
+          setRoomState((prev) => ({
+            ...prev,
+            currentVideo: video,
+            currentTime: data.currentTime,
+            isPlaying: true, // 항상 재생 상태로 설정
+          }))
+          
+          // 비디오가 변경되면 자동으로 스크롤하여 현재 재생 중인 비디오를 표시
+          const playlistItem = document.getElementById(`playlist-item-${video.id}`);
+          if (playlistItem) {
+            playlistItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }, 100)
       }
     })
 
@@ -222,11 +258,17 @@ export default function RoomClient({ roomId }: { roomId: string }) {
   // Update video progress
   useEffect(() => {
     const interval = setInterval(() => {
-      if (playerRef.current && roomState.isPlaying) {
-        const currentTime = playerRef.current.getCurrentTime() || 0
-        const duration = playerRef.current.getDuration() || 0
-        setVideoProgress((currentTime / duration) * 100)
-        setVideoDuration(duration)
+      if (playerRef.current && roomState.isPlaying && 
+          typeof playerRef.current.getCurrentTime === 'function' && 
+          typeof playerRef.current.getDuration === 'function') {
+        try {
+          const currentTime = playerRef.current.getCurrentTime() || 0
+          const duration = playerRef.current.getDuration() || 0
+          setVideoProgress((currentTime / duration) * 100)
+          setVideoDuration(duration)
+        } catch (err) {
+          console.error("Error updating video progress:", err)
+        }
       }
     }, 1000)
 
@@ -242,9 +284,12 @@ export default function RoomClient({ roomId }: { roomId: string }) {
 
       // Emit player state change if user is the one who played the video
       if (!roomState.isPlaying && socket) {
+        const currentTime = playerRef.current && playerRef.current.getCurrentTime ? 
+          playerRef.current.getCurrentTime() || 0 : 0;
+          
         socket.emit("player:stateChange", {
           isPlaying: true,
-          currentTime: playerRef?.current?.getCurrentTime() || 0,
+          currentTime: currentTime,
         })
       }
     } else if (event.data === 2) {
@@ -253,9 +298,12 @@ export default function RoomClient({ roomId }: { roomId: string }) {
 
       // Emit player state change if user is the one who paused the video
       if (roomState.isPlaying && socket) {
+        const currentTime = playerRef.current && playerRef.current.getCurrentTime ? 
+          playerRef.current.getCurrentTime() || 0 : 0;
+          
         socket.emit("player:stateChange", {
           isPlaying: false,
-          currentTime: playerRef?.current?.getCurrentTime() || 0,
+          currentTime: currentTime,
         })
       }
     } else if (event.data === 0) {
@@ -271,9 +319,12 @@ export default function RoomClient({ roomId }: { roomId: string }) {
 
     // Emit player state change
     if (socket) {
+      const currentTime = playerRef.current && playerRef.current.getCurrentTime ? 
+        playerRef.current.getCurrentTime() || 0 : 0;
+        
       socket.emit("player:stateChange", {
         isPlaying: newIsPlaying,
-        currentTime: playerRef?.current?.getCurrentTime() || 0,
+        currentTime: currentTime,
       })
     }
   }
@@ -282,13 +333,27 @@ export default function RoomClient({ roomId }: { roomId: string }) {
   const handleNextVideo = () => {
     const currentIndex = roomState.playlist.findIndex((video) => video.id === roomState.currentVideo?.id)
 
+    // 자동 재생이 꺼져 있고, 비디오가 끝났을 때 호출된 경우 다음 비디오로 넘어가지 않음
+    if (!roomState.autoplay && playerRef.current && playerRef.current.getPlayerState && playerRef.current.getPlayerState() === 0) {
+      return
+    }
+
     if (currentIndex < roomState.playlist.length - 1) {
       const nextVideo = roomState.playlist[currentIndex + 1]
 
-      // Emit video change
-      if (socket) {
-        socket.emit("video:change", nextVideo.id)
-      }
+      // 비디오 변경 전에 플레이어 상태 초기화
+      setRoomState((prev) => ({
+        ...prev,
+        isPlaying: false,
+      }));
+      
+      // 약간의 지연 후 비디오 변경 이벤트 발송
+      setTimeout(() => {
+        // Emit video change
+        if (socket) {
+          socket.emit("video:change", nextVideo.id)
+        }
+      }, 100);
     }
   }
 
@@ -308,10 +373,24 @@ export default function RoomClient({ roomId }: { roomId: string }) {
 
   // Handle video selection from playlist
   const handleVideoSelect = (video: VideoItem) => {
-    // Emit video change
-    if (socket) {
-      socket.emit("video:change", video.id)
+    // 현재 재생 중인 비디오와 같은 비디오를 선택한 경우 무시
+    if (roomState.currentVideo?.id === video.id) {
+      return;
     }
+    
+    // 비디오 변경 전에 플레이어 상태 초기화
+    setRoomState((prev) => ({
+      ...prev,
+      isPlaying: false,
+    }));
+    
+    // 약간의 지연 후 비디오 변경 이벤트 발송
+    setTimeout(() => {
+      // Emit video change
+      if (socket) {
+        socket.emit("video:change", video.id);
+      }
+    }, 100);
   }
 
   // Handle video removal from playlist
@@ -346,14 +425,31 @@ export default function RoomClient({ roomId }: { roomId: string }) {
         return
       }
 
+      // 플레이리스트가 비어있는지 확인
+      const isPlaylistEmpty = roomState.playlist.length === 0 || !roomState.currentVideo;
+      
+      // 새 비디오 객체 생성
+      const newVideo = {
+        id: `video-${Date.now()}`,
+        videoId,
+        title: videoDetails.title,
+        thumbnailUrl: videoDetails.thumbnailUrl,
+      };
+
       // Add video to playlist
       if (socket) {
-        socket.emit("playlist:add", {
-          id: `video-${Date.now()}`,
-          videoId,
-          title: videoDetails.title,
-          thumbnailUrl: videoDetails.thumbnailUrl,
-        })
+        socket.emit("playlist:add", newVideo);
+        
+        // 플레이리스트가 비어있었다면 클라이언트 측에서도 현재 비디오로 설정
+        // (서버에서도 처리하지만 UI 업데이트를 빠르게 하기 위해)
+        if (isPlaylistEmpty) {
+          setRoomState((prev) => ({
+            ...prev,
+            currentVideo: newVideo,
+            isPlaying: true,
+            currentTime: 0,
+          }));
+        }
       }
 
       // Close dialog and reset form
@@ -415,7 +511,25 @@ export default function RoomClient({ roomId }: { roomId: string }) {
   }
 
   // Check if current user is host
-  const isHost = isSignedIn && user?.id === roomState.hostId
+  const isHost = isSignedIn && user?.id === roomState.hostId ? true : false;
+
+  // Handle toggle autoplay
+  const handleToggleAutoplay = () => {
+    const newAutoplay = !roomState.autoplay
+    setRoomState((prev) => ({ ...prev, autoplay: newAutoplay }))
+
+    // Emit autoplay state change
+    if (socket) {
+      const currentTime = playerRef.current && playerRef.current.getCurrentTime ? 
+        playerRef.current.getCurrentTime() || 0 : 0;
+        
+      socket.emit("autoplay:toggle", {
+        isPlaying: roomState.isPlaying,
+        currentTime: currentTime,
+        autoplay: roomState.autoplay,
+      })
+    }
+  }
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)]">
@@ -548,16 +662,16 @@ export default function RoomClient({ roomId }: { roomId: string }) {
                       disabled={!roomState.currentVideo || isLoading}
                       className="h-9 w-9"
                     >
-                      {isLoading ? (
-                        <Skeleton className="h-5 w-5" />
-                      ) : roomState.isPlaying ? (
-                        <Pause className="h-5 w-5" />
+                      {roomState.isPlaying ? (
+                        <Pause className="h-4 w-4" />
                       ) : (
-                        <Play className="h-5 w-5" />
+                        <Play className="h-4 w-4" />
                       )}
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>{roomState.isPlaying ? "Pause" : "Play"}</TooltipContent>
+                  <TooltipContent>
+                    <p>{roomState.isPlaying ? "Pause" : "Play"}</p>
+                  </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
 
@@ -569,17 +683,19 @@ export default function RoomClient({ roomId }: { roomId: string }) {
                       size="icon"
                       onClick={handleNextVideo}
                       disabled={
-                        isLoading ||
                         !roomState.currentVideo ||
+                        isLoading ||
                         roomState.playlist.findIndex((v) => v.id === roomState.currentVideo?.id) ===
                           roomState.playlist.length - 1
                       }
                       className="h-9 w-9"
                     >
-                      <SkipForward className="h-5 w-5" />
+                      <SkipForward className="h-4 w-4" />
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>Next Video</TooltipContent>
+                  <TooltipContent>
+                    <p>Next video</p>
+                  </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
 
@@ -593,16 +709,39 @@ export default function RoomClient({ roomId }: { roomId: string }) {
                       disabled={!roomState.currentVideo || isLoading}
                       className="h-9 w-9"
                     >
-                      {isLoading ? (
-                        <Skeleton className="h-5 w-5" />
-                      ) : isMuted ? (
-                        <VolumeX className="h-5 w-5" />
+                      {isMuted ? (
+                        <VolumeX className="h-4 w-4" />
                       ) : (
-                        <Volume2 className="h-5 w-5" />
+                        <Volume2 className="h-4 w-4" />
                       )}
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>{isMuted ? "Unmute" : "Mute"}</TooltipContent>
+                  <TooltipContent>
+                    <p>{isMuted ? "Unmute" : "Mute"}</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={handleToggleAutoplay}
+                      disabled={!roomState.currentVideo || isLoading}
+                      className="h-9 w-9"
+                    >
+                      {roomState.autoplay ? (
+                        <Repeat className="h-4 w-4 text-primary" />
+                      ) : (
+                        <Repeat className="h-4 w-4" />
+                      )}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>{roomState.autoplay ? "자동 재생 켜짐" : "자동 재생 꺼짐"}</p>
+                  </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
 
@@ -826,7 +965,7 @@ interface ChatPanelProps {
   handleChatSubmit: (e: React.FormEvent) => void
   formatTimestamp: (timestamp: number) => string
   isLoading: boolean
-  chatEndRef: React.RefObject<HTMLDivElement>
+  chatEndRef: React.RefObject<HTMLDivElement | null>
 }
 
 function ChatPanel({
@@ -905,7 +1044,7 @@ interface PlaylistPanelProps {
   handleVideoSelect: (video: VideoItem) => void
   handleRemoveVideo: (videoId: string, e: React.MouseEvent) => void
   isLoading: boolean
-  isHost: boolean
+  isHost: boolean | undefined
 }
 
 function PlaylistPanel({
@@ -941,6 +1080,7 @@ function PlaylistPanel({
           playlist.map((video) => (
             <div
               key={video.id}
+              id={`playlist-item-${video.id}`}
               className={`flex p-3 border-b cursor-pointer hover:bg-muted/50 group ${
                 currentVideo?.id === video.id ? "bg-muted" : ""
               }`}

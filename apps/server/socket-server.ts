@@ -2,39 +2,12 @@ import { Server } from "socket.io"
 import { createServer } from "http"
 import { parse } from "url"
 import dotenv from "dotenv"
+import type { RoomUser, VideoItem, ChatMessage } from "shared"
 
-// Load environment variables
-dotenv.config()
-
-// Types
-type RoomUser = {
-  id: string
-  name: string
-  image?: string
-  isHost?: boolean
-  socketId: string
-}
-
-type VideoItem = {
-  id: string
-  videoId: string
-  title: string
-  thumbnailUrl: string
-}
-
-type ChatMessage = {
-  id: string
-  userId: string
-  userName: string
-  userImage?: string
-  message: string
-  timestamp: number
-}
-
+// RoomState 타입 정의 추가
 type RoomState = {
   roomId: string
   roomName: string
-  description?: string
   hostId: string
   users: RoomUser[]
   currentVideo: VideoItem | null
@@ -43,9 +16,12 @@ type RoomState = {
   currentTime: number
   messages: ChatMessage[]
   isPasswordProtected: boolean
-  password?: string
   createdAt: number
+  autoplay: boolean // 자동 재생 설정 추가
 }
+
+// Load environment variables
+dotenv.config()
 
 // In-memory store for rooms
 const rooms = new Map<string, RoomState>()
@@ -102,6 +78,7 @@ io.on("connection", (socket) => {
       messages: [],
       isPasswordProtected: false,
       createdAt: Date.now(),
+      autoplay: true,
     })
   }
 
@@ -109,7 +86,7 @@ io.on("connection", (socket) => {
   const room = rooms.get(roomId)!
 
   // Add user to room if not already present
-  const existingUserIndex = room.users.findIndex((u) => u.id === userId)
+  const existingUserIndex = room.users.findIndex((u: RoomUser) => u.id === userId)
 
   if (existingUserIndex === -1) {
     // Add new user
@@ -147,10 +124,21 @@ io.on("connection", (socket) => {
     socket.to(roomId).emit("player:stateChange", data)
   })
 
+  // Handle autoplay toggle
+  socket.on("autoplay:toggle", (data: { isPlaying: boolean; currentTime: number; autoplay: boolean }) => {
+    // Update room state
+    room.autoplay = !data.autoplay // Toggle autoplay state
+
+    // Broadcast to other users
+    socket.to(roomId).emit("autoplay:toggle", {
+      autoplay: room.autoplay
+    })
+  })
+
   // Handle video change
   socket.on("video:change", (videoId: string) => {
     // Find the video in the playlist
-    const video = room.playlist.find((v) => v.id === videoId)
+    const video = room.playlist.find((v: VideoItem) => v.id === videoId)
 
     if (video) {
       // Update room state
@@ -178,13 +166,21 @@ io.on("connection", (socket) => {
   // Handle adding a video to playlist
   socket.on("playlist:add", (video: VideoItem) => {
     // Add video to playlist if it doesn't exist
-    if (!room.playlist.some((v) => v.id === video.id)) {
+    if (!room.playlist.some((v: VideoItem) => v.id === video.id)) {
       room.playlist.push(video)
     }
 
     // If no video is currently playing, set this as current
     if (!room.currentVideo) {
       room.currentVideo = video
+      room.currentTime = 0
+      room.isPlaying = true
+      
+      // Notify all users about the video change
+      io.to(roomId).emit("video:change", {
+        videoId: video.videoId,
+        currentTime: 0,
+      })
     }
 
     // Broadcast updated playlist to all users
@@ -194,7 +190,7 @@ io.on("connection", (socket) => {
   // Handle removing a video from playlist
   socket.on("playlist:remove", (videoId: string) => {
     // Remove video from playlist
-    room.playlist = room.playlist.filter((v) => v.id !== videoId)
+    room.playlist = room.playlist.filter((v: VideoItem) => v.id !== videoId)
 
     // If current video was removed, set next video as current
     if (room.currentVideo && room.currentVideo.id === videoId) {
@@ -251,53 +247,44 @@ io.on("connection", (socket) => {
     console.log(`User ${userName} (${userId}) disconnected from room ${roomId}`)
 
     // Remove user from room
-    room.users = room.users.filter((u) => u.socketId !== socket.id)
+    if (room) {
+      room.users = room.users.filter((u: RoomUser) => u.id !== userId)
 
-    // If room is empty, remove it after a delay (to allow for reconnections)
-    if (room.users.length === 0) {
-      setTimeout(
-        () => {
-          if (rooms.has(roomId) && rooms.get(roomId)!.users.length === 0) {
+      // If room is empty, remove it after a delay
+      if (room.users.length === 0) {
+        setTimeout(() => {
+          // Check again if room is still empty
+          const currentRoom = rooms.get(roomId)
+          if (currentRoom && currentRoom.users.length === 0) {
             rooms.delete(roomId)
             console.log(`Room ${roomId} removed due to inactivity`)
           }
-        },
-        5 * 60 * 1000,
-      ) // 5 minutes
-    } else if (userId === room.hostId) {
-      // If host left, assign new host
-      room.hostId = room.users[0].id
-      room.users[0].isHost = true
+        }, 60000) // 1 minute delay
+      } else if (userId === room.hostId) {
+        // If host left, assign a new host
+        const newHost = room.users[0]
+        room.hostId = newHost.id
+        newHost.isHost = true
 
-      // Notify all users about the new host
-      io.to(roomId).emit("room:state", room)
+        // Notify all users about the new host
+        io.to(roomId).emit("host:changed", {
+          id: newHost.id,
+          name: newHost.name,
+        })
+      }
+
+      // Notify other users that someone left
+      socket.to(roomId).emit("user:left", {
+        id: userId,
+        name: userName,
+      })
     }
-
-    // Notify other users that someone left
-    socket.to(roomId).emit("user:left", userId)
   })
 })
 
-// Clean up inactive rooms periodically
-setInterval(
-  () => {
-    const now = Date.now()
-    const inactiveThreshold = 24 * 60 * 60 * 1000 // 24 hours
-
-    for (const [roomId, room] of rooms.entries()) {
-      // Remove rooms that are empty and older than the threshold
-      if (room.users.length === 0 && now - room.createdAt > inactiveThreshold) {
-        rooms.delete(roomId)
-        console.log(`Room ${roomId} removed due to inactivity`)
-      }
-    }
-  },
-  60 * 60 * 1000,
-) // Check every hour
-
 // Start server
-const PORT = process.env.PORT || 3001
+const PORT = process.env.PORT || 3003
 httpServer.listen(PORT, () => {
-  console.log(`Socket.io server running on port ${PORT}`)
+  console.log(`Socket server running on port ${PORT}`)
 })
 

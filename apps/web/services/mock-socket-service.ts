@@ -1,4 +1,5 @@
 import { EventEmitter } from "events"
+import type { Socket } from "socket.io-client"
 
 // Types
 export type RoomUser = {
@@ -121,7 +122,7 @@ class MockSocket extends EventEmitter {
   }
 
   // Mock socket.io emit method
-  emit(event: string, data: any) {
+  emit(event: string, data: any): boolean {
     console.log(`[MockSocket] Emitting ${event}:`, data)
 
     // Simulate server processing and response
@@ -129,7 +130,7 @@ class MockSocket extends EventEmitter {
       this.handleServerEvent(event, data)
     }, 100)
 
-    return this
+    return true
   }
 
   // Handle events that would normally be processed by the server
@@ -177,7 +178,7 @@ class MockSocket extends EventEmitter {
 }
 
 // Factory function to create a mock socket
-export function createMockSocket(roomId: string, userId: string, userName: string, userImage: string) {
-  return new MockSocket(roomId, userId, userName, userImage)
+export function createMockSocket(roomId: string, userId: string, userName: string, userImage: string): Socket {
+  return new MockSocket(roomId, userId, userName, userImage) as unknown as Socket
 }
 

@@ -1,21 +1,14 @@
 {
-  "name": "youtube-player",
+  "name": "web",
   "version": "0.1.0",
   "private": true,
-  "packageManager": "pnpm@8.15.4",
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
   "scripts": {
-    "dev": "turbo run dev",
-    "build": "turbo run build",
-    "start": "turbo run start",
-    "lint": "turbo run lint"
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
   },
   "dependencies": {
-    "@auth/core": "latest",
-    "@clerk/nextjs": "latest",
     "@hookform/resolvers": "latest",
     "@radix-ui/react-accordion": "^1.2.2",
     "@radix-ui/react-alert-dialog": "^1.1.4",
@@ -49,31 +42,30 @@
     "clsx": "^2.1.1",
     "cmdk": "1.0.4",
     "date-fns": "4.1.0",
-    "dotenv": "latest",
     "embla-carousel-react": "8.5.1",
-    "events": "latest",
-    "http": "latest",
     "input-otp": "1.4.1",
     "lucide-react": "^0.454.0",
     "next": "15.1.0",
-    "next-auth": "latest",
     "next-themes": "^0.4.4",
-    "nodemailer": "latest",
     "react": "^19",
     "react-day-picker": "8.10.1",
     "react-dom": "^19",
     "react-hook-form": "latest",
     "react-resizable-panels": "^2.1.7",
-    "react-youtube": "latest",
     "recharts": "2.15.0",
-    "socket.io": "latest",
-    "socket.io-client": "latest",
     "sonner": "^1.7.1",
     "tailwind-merge": "^2.5.5",
     "tailwindcss-animate": "^1.0.7",
-    "url": "latest",
     "vaul": "^0.9.6",
-    "zod": "latest"
+    "zod": "latest",
+    "@auth/core": "latest",
+    "nodemailer": "latest",
+    "@clerk/nextjs": "latest",
+    "socket.io-client": "latest",
+    "next-auth": "latest",
+    "dotenv": "latest",
+    "react-youtube": "latest",
+    "shared": "*"
   },
   "devDependencies": {
     "@types/node": "^22",
@@ -81,7 +73,6 @@
     "@types/react-dom": "^19",
     "postcss": "^8",
     "tailwindcss": "^3.4.17",
-    "turbo": "latest",
     "typescript": "^5"
   }
-}
+} 

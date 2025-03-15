@@ -1,5 +1,5 @@
 {
-  "name": "youtube-sync-socket-server",
+  "name": "server",
   "version": "1.0.0",
   "description": "Socket server for YouTube Sync Player",
   "main": "dist/socket-server.js",
@@ -10,7 +10,8 @@
   },
   "dependencies": {
     "dotenv": "^16.3.1",
-    "socket.io": "^4.7.2"
+    "socket.io": "^4.7.2",
+    "shared": "*"
   },
   "devDependencies": {
     "@types/node": "^20.5.0",
