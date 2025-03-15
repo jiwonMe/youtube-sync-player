@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import Link from "next/link"
+import Image from "next/image"
 import { useUser, UserButton, SignInButton } from "@clerk/nextjs"
 import { Menu, X, Youtube } from "lucide-react"
 
@@ -15,8 +16,8 @@ export function Navbar() {
     <header className="w-full border-b bg-background">
       <div className="container flex h-16 items-center justify-between px-4 md:px-6">
         <Link href="/" className="flex items-center gap-2 font-bold text-xl">
-          <Youtube className="h-5 w-5 text-red-600" />
-          <span className="hidden sm:inline-block">YouTube Sync Player</span>
+          <Image src="/logo.svg" alt="Que Logo" width={32} height={32} />
+          <span className="hidden sm:inline-block">Que</span>
         </Link>
 
         <nav className="hidden md:flex gap-6">

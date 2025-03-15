@@ -9,7 +9,7 @@ import "./globals.css"
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata = {
-  title: "YouTube Sync Player",
+  title: "Que",
   description: "Watch YouTube videos together with friends in sync",
   generator: 'v0.dev'
 }

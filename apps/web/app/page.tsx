@@ -112,7 +112,7 @@ export default function HomePage() {
         <div className="container px-4 md:px-6">
           <div className="flex flex-col items-center justify-center space-y-4 text-center">
             <p className="text-sm text-muted-foreground">
-              © {new Date().getFullYear()} YouTube Sync Player. All rights reserved.
+              © {new Date().getFullYear()} Que. All rights reserved.
             </p>
           </div>
         </div>

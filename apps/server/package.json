@@ -1,7 +1,7 @@
 {
   "name": "server",
   "version": "1.0.0",
-  "description": "Socket server for YouTube Sync Player",
+  "description": "Socket server for Que",
   "main": "dist/socket-server.js",
   "scripts": {
     "build": "tsc",
