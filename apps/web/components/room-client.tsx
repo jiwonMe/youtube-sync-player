@@ -26,6 +26,7 @@ import {
   GripVertical,
   ArrowUp,
   ArrowDown,
+  AlertCircle,
 } from "lucide-react"
 // @ts-ignore - 패키지가 설치되지 않았을 때 타입 오류 무시
 import { DragDropContext, Droppable, Draggable, DroppableProvided, DraggableProvided, DraggableStateSnapshot, DropResult } from "@hello-pangea/dnd"
@@ -41,6 +42,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Progress } from "@/components/ui/progress"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { createMockSocket } from "@/services/mock-socket-service"
+import { useToast } from "@/hooks/use-toast"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -58,6 +60,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
+import { Toaster } from "@/components/ui/toaster"
 
 // Types
 type RoomUser = {
@@ -120,6 +123,7 @@ const connectToRoom = (roomId: string, userId: string, userName: string, userIma
 
 export default function RoomClient({ roomId }: { roomId: string }) {
   const { user, isSignedIn, isLoaded } = useUser()
+  const { toast } = useToast()
 
   // State
   const [socket, setSocket] = useState<Socket | null>(null)
@@ -329,10 +333,36 @@ export default function RoomClient({ roomId }: { roomId: string }) {
   const handleVideoError = (errorCode: number) => {
     console.error(`YouTube 비디오 에러 발생: ${errorCode}`);
     
+    // 에러 코드에 따른 메시지 설정
+    let errorMessage = "비디오 재생 중 오류가 발생했습니다.";
+    
+    switch (errorCode) {
+      case 2:
+        errorMessage = "잘못된 비디오 URL 매개변수입니다.";
+        break;
+      case 5:
+        errorMessage = "HTML5 플레이어에서 재생할 수 없는 비디오입니다.";
+        break;
+      case 100:
+        errorMessage = "비디오를 찾을 수 없습니다. 삭제되었거나 비공개로 설정되었을 수 있습니다.";
+        break;
+      case 101:
+      case 150:
+        errorMessage = "비디오 소유자가 임베드 재생을 허용하지 않습니다.";
+        break;
+    }
+    
+    // 토스트 메시지 표시
+    toast({
+      title: "비디오 재생 오류",
+      description: `${errorMessage} 다음 비디오로 자동 전환합니다.`,
+      variant: "destructive",
+    });
+    
     // 에러 발생 시 다음 비디오로 자동 전환
     setTimeout(() => {
       handleNextVideo(true); // 강제로 다음 비디오로 넘어가도록 true 전달
-    }, 1000); // 1초 후 다음 비디오로 전환 (에러 메시지를 잠시 표시하기 위함)
+    }, 2000); // 2초 후 다음 비디오로 전환 (토스트 메시지를 충분히 표시하기 위함)
   }
 
   // Handle play/pause
@@ -605,87 +635,281 @@ export default function RoomClient({ roomId }: { roomId: string }) {
   };
 
   return (
-    <div className="flex flex-col h-[calc(100vh-4rem)]">
-      {/* Room info bar */}
-      <div className="bg-muted p-2 px-4 flex items-center justify-between">
-        <div className="flex items-center">
-          <h1 className="font-semibold truncate max-w-[200px] md:max-w-md">
-            {isLoading ? <Skeleton className="h-6 w-40" /> : roomState.roomName}
-          </h1>
-          <Badge variant="outline" className="ml-2">
-            {isLoading ? <Skeleton className="h-4 w-16" /> : `${roomState.users.length} viewers`}
-          </Badge>
-        </div>
+    <>
+      <div className="flex flex-col h-[calc(100vh-4rem)]">
+        {/* Room info bar */}
+        <div className="bg-muted p-2 px-4 flex items-center justify-between">
+          <div className="flex items-center">
+            <h1 className="font-semibold truncate max-w-[200px] md:max-w-md">
+              {isLoading ? <Skeleton className="h-6 w-40" /> : roomState.roomName}
+            </h1>
+            <Badge variant="outline" className="ml-2">
+              {isLoading ? <Skeleton className="h-4 w-16" /> : `${roomState.users.length} viewers`}
+            </Badge>
+          </div>
 
-        <div className="flex items-center gap-2">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
+          <div className="flex items-center gap-2">
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" variant="outline">
+                  <Share className="h-4 w-4 mr-2" />
+                  Share
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuLabel>Share this room</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={handleShareRoom}>
+                  <Link className="h-4 w-4 mr-2" />
+                  Copy Room Link
+                  {copySuccess && <Badge className="ml-2 bg-green-500">Copied!</Badge>}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() =>
+                    window.open(
+                      `https://twitter.com/intent/tweet?text=Join%20my%20YouTube%20room:%20${roomState.roomName}&url=${encodeURIComponent(window.location.href)}`,
+                      "_blank",
+                    )
+                  }
+                >
+                  <ExternalLink className="h-4 w-4 mr-2" />
+                  Share on Twitter
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {isHost && (
               <Button size="sm" variant="outline">
-                <Share className="h-4 w-4 mr-2" />
-                Share
+                <Settings className="h-4 w-4 mr-2" />
+                Room Settings
               </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuLabel>Share this room</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={handleShareRoom}>
-                <Link className="h-4 w-4 mr-2" />
-                Copy Room Link
-                {copySuccess && <Badge className="ml-2 bg-green-500">Copied!</Badge>}
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={() =>
-                  window.open(
-                    `https://twitter.com/intent/tweet?text=Join%20my%20YouTube%20room:%20${roomState.roomName}&url=${encodeURIComponent(window.location.href)}`,
-                    "_blank",
-                  )
-                }
-              >
-                <ExternalLink className="h-4 w-4 mr-2" />
-                Share on Twitter
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {isHost && (
-            <Button size="sm" variant="outline">
-              <Settings className="h-4 w-4 mr-2" />
-              Room Settings
-            </Button>
-          )}
+            )}
+          </div>
         </div>
-      </div>
 
-      {/* Main content */}
-      <div className="flex flex-1 overflow-hidden">
-        {/* Video player section */}
-        <div className="flex-1 flex flex-col h-full overflow-hidden">
-          {/* YouTube Player */}
-          <div className="relative bg-black aspect-video">
-            {isLoading ? (
-              <div className="absolute inset-0 flex items-center justify-center">
-                <Skeleton className="h-full w-full" />
+        {/* Main content */}
+        <div className="flex flex-1 overflow-hidden">
+          {/* Video player section */}
+          <div className="flex-1 flex flex-col h-full overflow-hidden">
+            {/* YouTube Player */}
+            <div className="relative bg-black aspect-video">
+              {isLoading ? (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <Skeleton className="h-full w-full" />
+                </div>
+              ) : roomState.currentVideo ? (
+                <YouTubePlayer
+                  videoId={roomState.currentVideo.videoId}
+                  isPlaying={roomState.isPlaying}
+                  currentTime={roomState.currentTime}
+                  onStateChange={handlePlayerStateChange}
+                  isMuted={isMuted}
+                  playerRef={playerRef}
+                  onVideoError={handleVideoError}
+                />
+              ) : (
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-white bg-zinc-900">
+                  <Youtube className="h-16 w-16 mb-4 text-red-600" />
+                  <p className="text-lg mb-2">No video selected</p>
+                  <p className="text-sm text-zinc-400 mb-4">Add a video to the playlist to get started</p>
+                  <Dialog open={showAddVideoDialog} onOpenChange={setShowAddVideoDialog}>
+                    <DialogTrigger asChild>
+                      <Button>
+                        <Plus className="h-4 w-4 mr-2" />
+                        Add YouTube Video
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Add YouTube Video</DialogTitle>
+                        <DialogDescription>Enter a YouTube video URL to add it to the playlist.</DialogDescription>
+                      </DialogHeader>
+                      <div className="grid gap-4 py-4">
+                        <div className="flex items-center gap-2">
+                          <Input
+                            placeholder="https://www.youtube.com/watch?v=..."
+                            value={videoUrl}
+                            onChange={(e) => setVideoUrl(e.target.value)}
+                          />
+                        </div>
+                      </div>
+                      <DialogFooter>
+                        <Button variant="outline" onClick={() => setShowAddVideoDialog(false)}>
+                          Cancel
+                        </Button>
+                        <Button onClick={handleAddVideo} disabled={isAddingVideo || !videoUrl.trim()}>
+                          {isAddingVideo ? "Adding..." : "Add Video"}
+                        </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+              )}
+            </div>
+
+            {/* Video progress bar */}
+            {roomState.currentVideo && (
+              <div className="h-1 bg-muted w-full">
+                <Progress value={videoProgress} className="h-1" />
               </div>
-            ) : roomState.currentVideo ? (
-              <YouTubePlayer
-                videoId={roomState.currentVideo.videoId}
-                isPlaying={roomState.isPlaying}
-                currentTime={roomState.currentTime}
-                onStateChange={handlePlayerStateChange}
-                isMuted={isMuted}
-                playerRef={playerRef}
-                onVideoError={handleVideoError}
-              />
-            ) : (
-              <div className="absolute inset-0 flex flex-col items-center justify-center text-white bg-zinc-900">
-                <Youtube className="h-16 w-16 mb-4 text-red-600" />
-                <p className="text-lg mb-2">No video selected</p>
-                <p className="text-sm text-zinc-400 mb-4">Add a video to the playlist to get started</p>
+            )}
+
+            {/* Video controls */}
+            <div className="p-3 bg-muted/50 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={handlePlayPause}
+                        disabled={!roomState.currentVideo || isLoading}
+                        className="h-9 w-9"
+                      >
+                        {roomState.isPlaying ? (
+                          <Pause className="h-4 w-4" />
+                        ) : (
+                          <Play className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>{roomState.isPlaying ? "Pause" : "Play"}</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleNextVideo()}
+                        disabled={
+                          !roomState.currentVideo ||
+                          isLoading ||
+                          roomState.playlist.findIndex((v) => v.id === roomState.currentVideo?.id) ===
+                            roomState.playlist.length - 1
+                        }
+                        className="h-9 w-9"
+                      >
+                        <SkipForward className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>Next video</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setIsMuted(!isMuted)}
+                        disabled={!roomState.currentVideo || isLoading}
+                        className="h-9 w-9"
+                      >
+                        {isMuted ? (
+                          <VolumeX className="h-4 w-4" />
+                        ) : (
+                          <Volume2 className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>{isMuted ? "Unmute" : "Mute"}</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={handleToggleAutoplay}
+                        disabled={!roomState.currentVideo || isLoading}
+                        className="h-9 w-9"
+                      >
+                        {roomState.autoplay ? (
+                          <Repeat className="h-4 w-4 text-primary" />
+                        ) : (
+                          <Repeat className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p>{roomState.autoplay ? "자동 재생 켜짐" : "자동 재생 꺼짐"}</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+
+                {roomState.currentVideo && (
+                  <div className="text-sm text-muted-foreground ml-2 hidden sm:block">
+                    {formatTime(playerRef.current?.getCurrentTime() || 0)} / {formatTime(videoDuration)}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center md:hidden">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowMobile(showMobile === "playlist" ? null : "playlist")}
+                  className="text-xs"
+                >
+                  <List className="h-4 w-4 mr-1" />
+                  Playlist
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowMobile(showMobile === "chat" ? null : "chat")}
+                  className="text-xs ml-1"
+                >
+                  <MessageSquare className="h-4 w-4 mr-1" />
+                  Chat
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowMobile(showMobile === "users" ? null : "users")}
+                  className="text-xs ml-1"
+                >
+                  <Users className="h-4 w-4 mr-1" />
+                  Users
+                </Button>
+              </div>
+
+              <div className="hidden md:flex items-center gap-3">
+                {roomState.currentVideo ? (
+                  <div className="flex items-center">
+                    <div className="relative w-8 h-8 rounded overflow-hidden mr-2">
+                      <img
+                        src={roomState.currentVideo.thumbnailUrl || "/placeholder.svg"}
+                        alt={roomState.currentVideo.title}
+                        className="object-cover w-full h-full"
+                      />
+                    </div>
+                    <p className="text-sm truncate max-w-[300px]">
+                      <span className="font-medium">{roomState.currentVideo.title}</span>
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">No video playing</p>
+                )}
+
                 <Dialog open={showAddVideoDialog} onOpenChange={setShowAddVideoDialog}>
                   <DialogTrigger asChild>
-                    <Button>
+                    <Button size="sm" variant="outline">
                       <Plus className="h-4 w-4 mr-2" />
-                      Add YouTube Video
+                      Add Video
                     </Button>
                   </DialogTrigger>
                   <DialogContent>
@@ -712,506 +936,315 @@ export default function RoomClient({ roomId }: { roomId: string }) {
                     </DialogFooter>
                   </DialogContent>
                 </Dialog>
+              </div>
+            </div>
+
+            {/* 다음 재생 예정 플레이리스트 - YouTube 플레이어 아래 공간 활용 */}
+            {roomState.currentVideo && roomState.playlist.length > 1 && (
+              <div className="bg-background border-t hidden sm:block">
+                <div className="p-2 bg-muted/30 flex items-center justify-between sticky top-0 z-10">
+                  <span className="text-sm font-medium flex items-center">
+                    <List className="h-4 w-4 mr-2 text-muted-foreground" />
+                    다음 재생 예정
+                  </span>
+                  <Dialog open={showAddVideoDialog} onOpenChange={setShowAddVideoDialog}>
+                    <DialogTrigger asChild>
+                      <Button size="sm" variant="outline" className="h-7">
+                        <Plus className="h-3 w-3 mr-1" />
+                        <span className="hidden sm:inline-block">Add Video</span>
+                        <span className="sm:hidden">Add</span>
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Add YouTube Video</DialogTitle>
+                        <DialogDescription>Enter a YouTube video URL to add it to the playlist.</DialogDescription>
+                      </DialogHeader>
+                      <div className="grid gap-4 py-4">
+                        <div className="flex items-center gap-2">
+                          <Input
+                            placeholder="https://www.youtube.com/watch?v=..."
+                            value={videoUrl}
+                            onChange={(e) => setVideoUrl(e.target.value)}
+                          />
+                        </div>
+                      </div>
+                      <DialogFooter>
+                        <Button variant="outline" onClick={() => setShowAddVideoDialog(false)}>
+                          Cancel
+                        </Button>
+                        <Button onClick={handleAddVideo} disabled={isAddingVideo || !videoUrl.trim()}>
+                          {isAddingVideo ? "Adding..." : "Add Video"}
+                        </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+                <ScrollArea className="max-h-[160px] md:max-h-[160px] sm:max-h-[140px]">
+                  <DragDropContext onDragEnd={handlePlaylistReorder}>
+                    <Droppable droppableId="upcoming-playlist" direction="horizontal">
+                      {(provided: DroppableProvided) => (
+                        <div 
+                          className="flex overflow-x-auto p-2 gap-3 pb-4"
+                          ref={provided.innerRef}
+                          {...provided.droppableProps}
+                        >
+                          {roomState.playlist
+                            .filter(video => video.id !== roomState.currentVideo?.id)
+                            .slice(0, 10)
+                            .map((video, index) => (
+                              <Draggable 
+                                key={`upcoming-${video.id}`} 
+                                draggableId={`upcoming-${video.id}`} 
+                                index={index}
+                                isDragDisabled={!isHost}
+                              >
+                                {(provided: DraggableProvided, snapshot: DraggableStateSnapshot) => (
+                                  <div
+                                    ref={provided.innerRef}
+                                    {...provided.draggableProps}
+                                    className={`flex-shrink-0 w-[160px] sm:w-[180px] md:w-[200px] cursor-pointer hover:bg-muted/40 rounded-md transition-colors p-2 group ${
+                                      snapshot.isDragging ? "bg-muted/60 shadow-lg" : ""
+                                    }`}
+                                    onClick={() => handleVideoSelect(video)}
+                                  >
+                                    <div className="relative w-full aspect-video rounded-md overflow-hidden mb-2">
+                                      <img
+                                        src={video.thumbnailUrl || "/placeholder.svg"}
+                                        alt={video.title}
+                                        className="object-cover w-full h-full"
+                                      />
+                                      <div className="absolute top-1 left-1 bg-black/70 text-white text-xs px-1.5 py-0.5 rounded">
+                                        {index + 1}
+                                      </div>
+                                      {isHost && (
+                                        <div 
+                                          {...provided.dragHandleProps}
+                                          className="absolute top-1 right-1 bg-black/70 text-white p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                                          onClick={(e) => e.stopPropagation()}
+                                        >
+                                          <GripVertical className="h-3 w-3" />
+                                        </div>
+                                      )}
+                                    </div>
+                                    <div className="flex justify-between items-start">
+                                      <h4 className="font-medium text-sm line-clamp-2 pr-2">{video.title}</h4>
+                                      <div className="flex items-center">
+                                        {isHost && (
+                                          <div className="flex opacity-0 group-hover:opacity-100 transition-opacity mr-1">
+                                            <Button
+                                              variant="ghost"
+                                              size="icon"
+                                              className="h-5 w-5 hover:bg-muted"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                // 현재 플레이리스트에서 이 비디오의 실제 인덱스를 찾습니다
+                                                const actualIndex = roomState.playlist.findIndex(v => v.id === video.id);
+                                                if (actualIndex > 0) {
+                                                  const newPlaylist = [...roomState.playlist];
+                                                  [newPlaylist[actualIndex], newPlaylist[actualIndex - 1]] = 
+                                                    [newPlaylist[actualIndex - 1], newPlaylist[actualIndex]];
+                                                  
+                                                  // 서버에 변경사항 전송
+                                                  if (socket) {
+                                                    socket.emit("playlist:reorder", newPlaylist);
+                                                  }
+                                                  
+                                                  // 로컬 상태 업데이트
+                                                  setRoomState(prev => ({
+                                                    ...prev,
+                                                    playlist: newPlaylist
+                                                  }));
+                                                }
+                                              }}
+                                              disabled={roomState.playlist.findIndex(v => v.id === video.id) === 0}
+                                            >
+                                              <ArrowUp className="h-3 w-3 text-muted-foreground" />
+                                            </Button>
+                                            <Button
+                                              variant="ghost"
+                                              size="icon"
+                                              className="h-5 w-5 hover:bg-muted"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                // 현재 플레이리스트에서 이 비디오의 실제 인덱스를 찾습니다
+                                                const actualIndex = roomState.playlist.findIndex(v => v.id === video.id);
+                                                if (actualIndex < roomState.playlist.length - 1) {
+                                                  const newPlaylist = [...roomState.playlist];
+                                                  [newPlaylist[actualIndex], newPlaylist[actualIndex + 1]] = 
+                                                    [newPlaylist[actualIndex + 1], newPlaylist[actualIndex]];
+                                                  
+                                                  // 서버에 변경사항 전송
+                                                  if (socket) {
+                                                    socket.emit("playlist:reorder", newPlaylist);
+                                                  }
+                                                  
+                                                  // 로컬 상태 업데이트
+                                                  setRoomState(prev => ({
+                                                    ...prev,
+                                                    playlist: newPlaylist
+                                                  }));
+                                                }
+                                              }}
+                                              disabled={roomState.playlist.findIndex(v => v.id === video.id) === roomState.playlist.length - 1}
+                                            >
+                                              <ArrowDown className="h-3 w-3 text-muted-foreground" />
+                                            </Button>
+                                          </div>
+                                        )}
+                                        {isHost && (
+                                          <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive/10"
+                                            onClick={(e) => handleRemoveVideo(video.id, e)}
+                                          >
+                                            <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
+                                          </Button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+                              </Draggable>
+                            ))}
+                          {provided.placeholder}
+                        </div>
+                      )}
+                    </Droppable>
+                  </DragDropContext>
+                </ScrollArea>
+              </div>
+            )}
+
+            {/* Mobile playlist/chat (shows only on mobile when activated) */}
+            {showMobile && (
+              <div className="md:hidden flex-1 flex flex-col overflow-hidden border-t">
+                <div className="p-2 bg-muted flex items-center justify-between">
+                  <h3 className="font-medium">
+                    {showMobile === "chat" ? "Chat" : showMobile === "playlist" ? "Playlist" : "Viewers"}
+                  </h3>
+                  <div className="flex items-center gap-2">
+                    {showMobile === "playlist" && (
+                      <Dialog open={showAddVideoDialog} onOpenChange={setShowAddVideoDialog}>
+                        <DialogTrigger asChild>
+                          <Button size="sm" variant="outline">
+                            <Plus className="h-4 w-4" />
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent>
+                          <DialogHeader>
+                            <DialogTitle>Add YouTube Video</DialogTitle>
+                            <DialogDescription>Enter a YouTube video URL to add it to the playlist.</DialogDescription>
+                          </DialogHeader>
+                          <div className="grid gap-4 py-4">
+                            <div className="flex items-center gap-2">
+                              <Input
+                                placeholder="https://www.youtube.com/watch?v=..."
+                                value={videoUrl}
+                                onChange={(e) => setVideoUrl(e.target.value)}
+                              />
+                            </div>
+                          </div>
+                          <DialogFooter>
+                            <Button variant="outline" onClick={() => setShowAddVideoDialog(false)}>
+                              Cancel
+                            </Button>
+                            <Button onClick={handleAddVideo} disabled={isAddingVideo || !videoUrl.trim()}>
+                              {isAddingVideo ? "Adding..." : "Add Video"}
+                            </Button>
+                          </DialogFooter>
+                        </DialogContent>
+                      </Dialog>
+                    )}
+                    <Button variant="ghost" size="icon" onClick={() => setShowMobile(null)}>
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+
+                {showMobile === "chat" ? (
+                  <ChatPanel
+                    messages={roomState.messages}
+                    chatInput={chatInput}
+                    setChatInput={setChatInput}
+                    handleChatSubmit={handleChatSubmit}
+                    formatTimestamp={formatTimestamp}
+                    isLoading={isLoading}
+                    chatEndRef={chatEndRef}
+                  />
+                ) : showMobile === "playlist" ? (
+                  <PlaylistPanel
+                    playlist={roomState.playlist}
+                    currentVideo={roomState.currentVideo}
+                    handleVideoSelect={handleVideoSelect}
+                    handleRemoveVideo={handleRemoveVideo}
+                    isLoading={isLoading}
+                    isHost={isHost}
+                    handlePlaylistReorder={handlePlaylistReorder}
+                    socket={socket}
+                  />
+                ) : (
+                  <UsersPanel users={roomState.users} hostId={roomState.hostId} isLoading={isLoading} />
+                )}
               </div>
             )}
           </div>
 
-          {/* Video progress bar */}
-          {roomState.currentVideo && (
-            <div className="h-1 bg-muted w-full">
-              <Progress value={videoProgress} className="h-1" />
-            </div>
-          )}
+          {/* Sidebar - for tablet and desktop only */}
+          <div className="hidden md:flex w-80 border-l bg-card flex-shrink-0 flex-col h-full">
+            <Tabs defaultValue="playlist" className="flex flex-col w-full h-full">
+              <TabsList className="bg-muted h-12 grid grid-cols-3 p-1 flex-shrink-0">
+                <TabsTrigger value="playlist" className="flex items-center justify-center data-[state=active]:bg-background data-[state=active]:shadow-sm">
+                  <List className="h-4 w-4 mr-2" />
+                  <span>Playlist</span>
+                </TabsTrigger>
+                <TabsTrigger value="chat" className="flex items-center justify-center data-[state=active]:bg-background data-[state=active]:shadow-sm">
+                  <MessageSquare className="h-4 w-4 mr-2" />
+                  <span>Chat</span>
+                </TabsTrigger>
+                <TabsTrigger value="users" className="flex items-center justify-center data-[state=active]:bg-background data-[state=active]:shadow-sm">
+                  <Users className="h-4 w-4 mr-2" />
+                  <span>Users</span>
+                </TabsTrigger>
+              </TabsList>
 
-          {/* Video controls */}
-          <div className="p-3 bg-muted/50 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={handlePlayPause}
-                      disabled={!roomState.currentVideo || isLoading}
-                      className="h-9 w-9"
-                    >
-                      {roomState.isPlaying ? (
-                        <Pause className="h-4 w-4" />
-                      ) : (
-                        <Play className="h-4 w-4" />
-                      )}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>{roomState.isPlaying ? "Pause" : "Play"}</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
+              <div className="flex-1 overflow-hidden">
+                <TabsContent value="playlist" className="h-[calc(100%-3rem)] data-[state=active]:flex data-[state=active]:flex-col hidden">
+                  <PlaylistPanel
+                    playlist={roomState.playlist}
+                    currentVideo={roomState.currentVideo}
+                    handleVideoSelect={handleVideoSelect}
+                    handleRemoveVideo={handleRemoveVideo}
+                    isLoading={isLoading}
+                    isHost={isHost}
+                    handlePlaylistReorder={handlePlaylistReorder}
+                    socket={socket}
+                  />
+                </TabsContent>
 
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleNextVideo()}
-                      disabled={
-                        !roomState.currentVideo ||
-                        isLoading ||
-                        roomState.playlist.findIndex((v) => v.id === roomState.currentVideo?.id) ===
-                          roomState.playlist.length - 1
-                      }
-                      className="h-9 w-9"
-                    >
-                      <SkipForward className="h-4 w-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>Next video</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
+                <TabsContent value="chat" className="h-[calc(100%-3rem)] data-[state=active]:flex data-[state=active]:flex-col hidden">
+                  <ChatPanel
+                    messages={roomState.messages}
+                    chatInput={chatInput}
+                    setChatInput={setChatInput}
+                    handleChatSubmit={handleChatSubmit}
+                    formatTimestamp={formatTimestamp}
+                    isLoading={isLoading}
+                    chatEndRef={chatEndRef}
+                  />
+                </TabsContent>
 
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setIsMuted(!isMuted)}
-                      disabled={!roomState.currentVideo || isLoading}
-                      className="h-9 w-9"
-                    >
-                      {isMuted ? (
-                        <VolumeX className="h-4 w-4" />
-                      ) : (
-                        <Volume2 className="h-4 w-4" />
-                      )}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>{isMuted ? "Unmute" : "Mute"}</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={handleToggleAutoplay}
-                      disabled={!roomState.currentVideo || isLoading}
-                      className="h-9 w-9"
-                    >
-                      {roomState.autoplay ? (
-                        <Repeat className="h-4 w-4 text-primary" />
-                      ) : (
-                        <Repeat className="h-4 w-4" />
-                      )}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>{roomState.autoplay ? "자동 재생 켜짐" : "자동 재생 꺼짐"}</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-
-              {roomState.currentVideo && (
-                <div className="text-sm text-muted-foreground ml-2 hidden sm:block">
-                  {formatTime(playerRef.current?.getCurrentTime() || 0)} / {formatTime(videoDuration)}
-                </div>
-              )}
-            </div>
-
-            <div className="flex items-center md:hidden">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowMobile(showMobile === "playlist" ? null : "playlist")}
-                className="text-xs"
-              >
-                <List className="h-4 w-4 mr-1" />
-                Playlist
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowMobile(showMobile === "chat" ? null : "chat")}
-                className="text-xs ml-1"
-              >
-                <MessageSquare className="h-4 w-4 mr-1" />
-                Chat
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setShowMobile(showMobile === "users" ? null : "users")}
-                className="text-xs ml-1"
-              >
-                <Users className="h-4 w-4 mr-1" />
-                Users
-              </Button>
-            </div>
-
-            <div className="hidden md:flex items-center gap-3">
-              {roomState.currentVideo ? (
-                <div className="flex items-center">
-                  <div className="relative w-8 h-8 rounded overflow-hidden mr-2">
-                    <img
-                      src={roomState.currentVideo.thumbnailUrl || "/placeholder.svg"}
-                      alt={roomState.currentVideo.title}
-                      className="object-cover w-full h-full"
-                    />
-                  </div>
-                  <p className="text-sm truncate max-w-[300px]">
-                    <span className="font-medium">{roomState.currentVideo.title}</span>
-                  </p>
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">No video playing</p>
-              )}
-
-              <Dialog open={showAddVideoDialog} onOpenChange={setShowAddVideoDialog}>
-                <DialogTrigger asChild>
-                  <Button size="sm" variant="outline">
-                    <Plus className="h-4 w-4 mr-2" />
-                    Add Video
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Add YouTube Video</DialogTitle>
-                    <DialogDescription>Enter a YouTube video URL to add it to the playlist.</DialogDescription>
-                  </DialogHeader>
-                  <div className="grid gap-4 py-4">
-                    <div className="flex items-center gap-2">
-                      <Input
-                        placeholder="https://www.youtube.com/watch?v=..."
-                        value={videoUrl}
-                        onChange={(e) => setVideoUrl(e.target.value)}
-                      />
-                    </div>
-                  </div>
-                  <DialogFooter>
-                    <Button variant="outline" onClick={() => setShowAddVideoDialog(false)}>
-                      Cancel
-                    </Button>
-                    <Button onClick={handleAddVideo} disabled={isAddingVideo || !videoUrl.trim()}>
-                      {isAddingVideo ? "Adding..." : "Add Video"}
-                    </Button>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
-            </div>
+                <TabsContent value="users" className="h-[calc(100%-3rem)] data-[state=active]:flex data-[state=active]:flex-col hidden">
+                  <UsersPanel users={roomState.users} hostId={roomState.hostId} isLoading={isLoading} />
+                </TabsContent>
+              </div>
+            </Tabs>
           </div>
-
-          {/* 다음 재생 예정 플레이리스트 - YouTube 플레이어 아래 공간 활용 */}
-          {roomState.currentVideo && roomState.playlist.length > 1 && (
-            <div className="bg-background border-t hidden sm:block">
-              <div className="p-2 bg-muted/30 flex items-center justify-between sticky top-0 z-10">
-                <span className="text-sm font-medium flex items-center">
-                  <List className="h-4 w-4 mr-2 text-muted-foreground" />
-                  다음 재생 예정
-                </span>
-                <Dialog open={showAddVideoDialog} onOpenChange={setShowAddVideoDialog}>
-                  <DialogTrigger asChild>
-                    <Button size="sm" variant="outline" className="h-7">
-                      <Plus className="h-3 w-3 mr-1" />
-                      <span className="hidden sm:inline-block">Add Video</span>
-                      <span className="sm:hidden">Add</span>
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader>
-                      <DialogTitle>Add YouTube Video</DialogTitle>
-                      <DialogDescription>Enter a YouTube video URL to add it to the playlist.</DialogDescription>
-                    </DialogHeader>
-                    <div className="grid gap-4 py-4">
-                      <div className="flex items-center gap-2">
-                        <Input
-                          placeholder="https://www.youtube.com/watch?v=..."
-                          value={videoUrl}
-                          onChange={(e) => setVideoUrl(e.target.value)}
-                        />
-                      </div>
-                    </div>
-                    <DialogFooter>
-                      <Button variant="outline" onClick={() => setShowAddVideoDialog(false)}>
-                        Cancel
-                      </Button>
-                      <Button onClick={handleAddVideo} disabled={isAddingVideo || !videoUrl.trim()}>
-                        {isAddingVideo ? "Adding..." : "Add Video"}
-                      </Button>
-                    </DialogFooter>
-                  </DialogContent>
-                </Dialog>
-              </div>
-              <ScrollArea className="max-h-[160px] md:max-h-[160px] sm:max-h-[140px]">
-                <DragDropContext onDragEnd={handlePlaylistReorder}>
-                  <Droppable droppableId="upcoming-playlist" direction="horizontal">
-                    {(provided: DroppableProvided) => (
-                      <div 
-                        className="flex overflow-x-auto p-2 gap-3 pb-4"
-                        ref={provided.innerRef}
-                        {...provided.droppableProps}
-                      >
-                        {roomState.playlist
-                          .filter(video => video.id !== roomState.currentVideo?.id)
-                          .slice(0, 10)
-                          .map((video, index) => (
-                            <Draggable 
-                              key={`upcoming-${video.id}`} 
-                              draggableId={`upcoming-${video.id}`} 
-                              index={index}
-                              isDragDisabled={!isHost}
-                            >
-                              {(provided: DraggableProvided, snapshot: DraggableStateSnapshot) => (
-                                <div
-                                  ref={provided.innerRef}
-                                  {...provided.draggableProps}
-                                  className={`flex-shrink-0 w-[160px] sm:w-[180px] md:w-[200px] cursor-pointer hover:bg-muted/40 rounded-md transition-colors p-2 group ${
-                                    snapshot.isDragging ? "bg-muted/60 shadow-lg" : ""
-                                  }`}
-                                  onClick={() => handleVideoSelect(video)}
-                                >
-                                  <div className="relative w-full aspect-video rounded-md overflow-hidden mb-2">
-                                    <img
-                                      src={video.thumbnailUrl || "/placeholder.svg"}
-                                      alt={video.title}
-                                      className="object-cover w-full h-full"
-                                    />
-                                    <div className="absolute top-1 left-1 bg-black/70 text-white text-xs px-1.5 py-0.5 rounded">
-                                      {index + 1}
-                                    </div>
-                                    {isHost && (
-                                      <div 
-                                        {...provided.dragHandleProps}
-                                        className="absolute top-1 right-1 bg-black/70 text-white p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity"
-                                        onClick={(e) => e.stopPropagation()}
-                                      >
-                                        <GripVertical className="h-3 w-3" />
-                                      </div>
-                                    )}
-                                  </div>
-                                  <div className="flex justify-between items-start">
-                                    <h4 className="font-medium text-sm line-clamp-2 pr-2">{video.title}</h4>
-                                    <div className="flex items-center">
-                                      {isHost && (
-                                        <div className="flex opacity-0 group-hover:opacity-100 transition-opacity mr-1">
-                                          <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="h-5 w-5 hover:bg-muted"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              // 현재 플레이리스트에서 이 비디오의 실제 인덱스를 찾습니다
-                                              const actualIndex = roomState.playlist.findIndex(v => v.id === video.id);
-                                              if (actualIndex > 0) {
-                                                const newPlaylist = [...roomState.playlist];
-                                                [newPlaylist[actualIndex], newPlaylist[actualIndex - 1]] = 
-                                                  [newPlaylist[actualIndex - 1], newPlaylist[actualIndex]];
-                                                
-                                                // 서버에 변경사항 전송
-                                                if (socket) {
-                                                  socket.emit("playlist:reorder", newPlaylist);
-                                                }
-                                                
-                                                // 로컬 상태 업데이트
-                                                setRoomState(prev => ({
-                                                  ...prev,
-                                                  playlist: newPlaylist
-                                                }));
-                                              }
-                                            }}
-                                            disabled={roomState.playlist.findIndex(v => v.id === video.id) === 0}
-                                          >
-                                            <ArrowUp className="h-3 w-3 text-muted-foreground" />
-                                          </Button>
-                                          <Button
-                                            variant="ghost"
-                                            size="icon"
-                                            className="h-5 w-5 hover:bg-muted"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              // 현재 플레이리스트에서 이 비디오의 실제 인덱스를 찾습니다
-                                              const actualIndex = roomState.playlist.findIndex(v => v.id === video.id);
-                                              if (actualIndex < roomState.playlist.length - 1) {
-                                                const newPlaylist = [...roomState.playlist];
-                                                [newPlaylist[actualIndex], newPlaylist[actualIndex + 1]] = 
-                                                  [newPlaylist[actualIndex + 1], newPlaylist[actualIndex]];
-                                                
-                                                // 서버에 변경사항 전송
-                                                if (socket) {
-                                                  socket.emit("playlist:reorder", newPlaylist);
-                                                }
-                                                
-                                                // 로컬 상태 업데이트
-                                                setRoomState(prev => ({
-                                                  ...prev,
-                                                  playlist: newPlaylist
-                                                }));
-                                              }
-                                            }}
-                                            disabled={roomState.playlist.findIndex(v => v.id === video.id) === roomState.playlist.length - 1}
-                                          >
-                                            <ArrowDown className="h-3 w-3 text-muted-foreground" />
-                                          </Button>
-                                        </div>
-                                      )}
-                                      {isHost && (
-                                        <Button
-                                          variant="ghost"
-                                          size="icon"
-                                          className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive/10"
-                                          onClick={(e) => handleRemoveVideo(video.id, e)}
-                                        >
-                                          <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
-                                        </Button>
-                                      )}
-                                    </div>
-                                  </div>
-                                </div>
-                              )}
-                            </Draggable>
-                          ))}
-                        {provided.placeholder}
-                      </div>
-                    )}
-                  </Droppable>
-                </DragDropContext>
-              </ScrollArea>
-            </div>
-          )}
-
-          {/* Mobile playlist/chat (shows only on mobile when activated) */}
-          {showMobile && (
-            <div className="md:hidden flex-1 flex flex-col overflow-hidden border-t">
-              <div className="p-2 bg-muted flex items-center justify-between">
-                <h3 className="font-medium">
-                  {showMobile === "chat" ? "Chat" : showMobile === "playlist" ? "Playlist" : "Viewers"}
-                </h3>
-                <div className="flex items-center gap-2">
-                  {showMobile === "playlist" && (
-                    <Dialog open={showAddVideoDialog} onOpenChange={setShowAddVideoDialog}>
-                      <DialogTrigger asChild>
-                        <Button size="sm" variant="outline">
-                          <Plus className="h-4 w-4" />
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent>
-                        <DialogHeader>
-                          <DialogTitle>Add YouTube Video</DialogTitle>
-                          <DialogDescription>Enter a YouTube video URL to add it to the playlist.</DialogDescription>
-                        </DialogHeader>
-                        <div className="grid gap-4 py-4">
-                          <div className="flex items-center gap-2">
-                            <Input
-                              placeholder="https://www.youtube.com/watch?v=..."
-                              value={videoUrl}
-                              onChange={(e) => setVideoUrl(e.target.value)}
-                            />
-                          </div>
-                        </div>
-                        <DialogFooter>
-                          <Button variant="outline" onClick={() => setShowAddVideoDialog(false)}>
-                            Cancel
-                          </Button>
-                          <Button onClick={handleAddVideo} disabled={isAddingVideo || !videoUrl.trim()}>
-                            {isAddingVideo ? "Adding..." : "Add Video"}
-                          </Button>
-                        </DialogFooter>
-                      </DialogContent>
-                    </Dialog>
-                  )}
-                  <Button variant="ghost" size="icon" onClick={() => setShowMobile(null)}>
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-
-              {showMobile === "chat" ? (
-                <ChatPanel
-                  messages={roomState.messages}
-                  chatInput={chatInput}
-                  setChatInput={setChatInput}
-                  handleChatSubmit={handleChatSubmit}
-                  formatTimestamp={formatTimestamp}
-                  isLoading={isLoading}
-                  chatEndRef={chatEndRef}
-                />
-              ) : showMobile === "playlist" ? (
-                <PlaylistPanel
-                  playlist={roomState.playlist}
-                  currentVideo={roomState.currentVideo}
-                  handleVideoSelect={handleVideoSelect}
-                  handleRemoveVideo={handleRemoveVideo}
-                  isLoading={isLoading}
-                  isHost={isHost}
-                  handlePlaylistReorder={handlePlaylistReorder}
-                  socket={socket}
-                />
-              ) : (
-                <UsersPanel users={roomState.users} hostId={roomState.hostId} isLoading={isLoading} />
-              )}
-            </div>
-          )}
-        </div>
-
-        {/* Sidebar - for tablet and desktop only */}
-        <div className="hidden md:flex w-80 border-l bg-card flex-shrink-0 flex-col h-full">
-          <Tabs defaultValue="playlist" className="flex flex-col w-full h-full">
-            <TabsList className="bg-muted h-12 grid grid-cols-3 p-1 flex-shrink-0">
-              <TabsTrigger value="playlist" className="flex items-center justify-center data-[state=active]:bg-background data-[state=active]:shadow-sm">
-                <List className="h-4 w-4 mr-2" />
-                <span>Playlist</span>
-              </TabsTrigger>
-              <TabsTrigger value="chat" className="flex items-center justify-center data-[state=active]:bg-background data-[state=active]:shadow-sm">
-                <MessageSquare className="h-4 w-4 mr-2" />
-                <span>Chat</span>
-              </TabsTrigger>
-              <TabsTrigger value="users" className="flex items-center justify-center data-[state=active]:bg-background data-[state=active]:shadow-sm">
-                <Users className="h-4 w-4 mr-2" />
-                <span>Users</span>
-              </TabsTrigger>
-            </TabsList>
-
-            <div className="flex-1 overflow-hidden">
-              <TabsContent value="playlist" className="h-[calc(100%-3rem)] data-[state=active]:flex data-[state=active]:flex-col hidden">
-                <PlaylistPanel
-                  playlist={roomState.playlist}
-                  currentVideo={roomState.currentVideo}
-                  handleVideoSelect={handleVideoSelect}
-                  handleRemoveVideo={handleRemoveVideo}
-                  isLoading={isLoading}
-                  isHost={isHost}
-                  handlePlaylistReorder={handlePlaylistReorder}
-                  socket={socket}
-                />
-              </TabsContent>
-
-              <TabsContent value="chat" className="h-[calc(100%-3rem)] data-[state=active]:flex data-[state=active]:flex-col hidden">
-                <ChatPanel
-                  messages={roomState.messages}
-                  chatInput={chatInput}
-                  setChatInput={setChatInput}
-                  handleChatSubmit={handleChatSubmit}
-                  formatTimestamp={formatTimestamp}
-                  isLoading={isLoading}
-                  chatEndRef={chatEndRef}
-                />
-              </TabsContent>
-
-              <TabsContent value="users" className="h-[calc(100%-3rem)] data-[state=active]:flex data-[state=active]:flex-col hidden">
-                <UsersPanel users={roomState.users} hostId={roomState.hostId} isLoading={isLoading} />
-              </TabsContent>
-            </div>
-          </Tabs>
         </div>
       </div>
-    </div>
+      <Toaster />
+    </>
   )
 }
 
@@ -1484,10 +1517,6 @@ function PlaylistPanel({
                                   </Button>
                                 )}
                               </div>
-                            </div>
-                            <div className="flex items-center mt-1">
-                              <Youtube className="h-3 w-3 text-red-600 mr-1" />
-                              <span className="text-xs text-muted-foreground">YouTube</span>
                             </div>
                           </div>
                         </div>
