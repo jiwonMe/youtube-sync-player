@@ -1,0 +1,303 @@
+import { Server } from "socket.io"
+import { createServer } from "http"
+import { parse } from "url"
+import dotenv from "dotenv"
+
+// Load environment variables
+dotenv.config()
+
+// Types
+type RoomUser = {
+  id: string
+  name: string
+  image?: string
+  isHost?: boolean
+  socketId: string
+}
+
+type VideoItem = {
+  id: string
+  videoId: string
+  title: string
+  thumbnailUrl: string
+}
+
+type ChatMessage = {
+  id: string
+  userId: string
+  userName: string
+  userImage?: string
+  message: string
+  timestamp: number
+}
+
+type RoomState = {
+  roomId: string
+  roomName: string
+  description?: string
+  hostId: string
+  users: RoomUser[]
+  currentVideo: VideoItem | null
+  playlist: VideoItem[]
+  isPlaying: boolean
+  currentTime: number
+  messages: ChatMessage[]
+  isPasswordProtected: boolean
+  password?: string
+  createdAt: number
+}
+
+// In-memory store for rooms
+const rooms = new Map<string, RoomState>()
+
+// Create HTTP server
+const httpServer = createServer((req, res) => {
+  const parsedUrl = parse(req.url || "", true)
+
+  if (parsedUrl.pathname === "/health") {
+    res.writeHead(200)
+    res.end("Healthy")
+    return
+  }
+
+  res.writeHead(404)
+  res.end("Not found")
+})
+
+// Create Socket.io server
+const io = new Server(httpServer, {
+  cors: {
+    origin: process.env.CORS_ORIGIN || "*", // In production, restrict this to your domain
+    methods: ["GET", "POST"],
+    credentials: true,
+  },
+})
+
+// Socket.io connection handler
+io.on("connection", (socket) => {
+  // Get query parameters
+  const { roomId, userId, userName, userImage } = socket.handshake.query as {
+    roomId: string
+    userId: string
+    userName: string
+    userImage: string
+  }
+
+  console.log(`User ${userName} (${userId}) connected to room ${roomId}`)
+
+  // Join the room
+  socket.join(roomId)
+
+  // Initialize room if it doesn't exist
+  if (!rooms.has(roomId)) {
+    rooms.set(roomId, {
+      roomId,
+      roomName: "YouTube Room",
+      hostId: userId, // First user becomes host
+      users: [],
+      currentVideo: null,
+      playlist: [],
+      isPlaying: false,
+      currentTime: 0,
+      messages: [],
+      isPasswordProtected: false,
+      createdAt: Date.now(),
+    })
+  }
+
+  // Get room
+  const room = rooms.get(roomId)!
+
+  // Add user to room if not already present
+  const existingUserIndex = room.users.findIndex((u) => u.id === userId)
+
+  if (existingUserIndex === -1) {
+    // Add new user
+    const user: RoomUser = {
+      id: userId,
+      name: userName,
+      image: userImage,
+      isHost: userId === room.hostId,
+      socketId: socket.id,
+    }
+    room.users.push(user)
+  } else {
+    // Update existing user's socket ID
+    room.users[existingUserIndex].socketId = socket.id
+  }
+
+  // Send current room state to the new user
+  socket.emit("room:state", room)
+
+  // Notify other users that someone joined
+  socket.to(roomId).emit("user:joined", {
+    id: userId,
+    name: userName,
+    image: userImage,
+    isHost: userId === room.hostId,
+  })
+
+  // Handle player state change
+  socket.on("player:stateChange", (data: { isPlaying: boolean; currentTime: number }) => {
+    // Update room state
+    room.isPlaying = data.isPlaying
+    room.currentTime = data.currentTime
+
+    // Broadcast to other users
+    socket.to(roomId).emit("player:stateChange", data)
+  })
+
+  // Handle video change
+  socket.on("video:change", (videoId: string) => {
+    // Find the video in the playlist
+    const video = room.playlist.find((v) => v.id === videoId)
+
+    if (video) {
+      // Update room state
+      room.currentVideo = video
+      room.currentTime = 0
+      room.isPlaying = true
+
+      // Broadcast to other users
+      socket.to(roomId).emit("video:change", {
+        videoId: video.videoId,
+        currentTime: 0,
+      })
+    }
+  })
+
+  // Handle playlist update
+  socket.on("playlist:update", (playlist: VideoItem[]) => {
+    // Update room state
+    room.playlist = playlist
+
+    // Broadcast to other users
+    socket.to(roomId).emit("playlist:update", playlist)
+  })
+
+  // Handle adding a video to playlist
+  socket.on("playlist:add", (video: VideoItem) => {
+    // Add video to playlist if it doesn't exist
+    if (!room.playlist.some((v) => v.id === video.id)) {
+      room.playlist.push(video)
+    }
+
+    // If no video is currently playing, set this as current
+    if (!room.currentVideo) {
+      room.currentVideo = video
+    }
+
+    // Broadcast updated playlist to all users
+    io.to(roomId).emit("playlist:update", room.playlist)
+  })
+
+  // Handle removing a video from playlist
+  socket.on("playlist:remove", (videoId: string) => {
+    // Remove video from playlist
+    room.playlist = room.playlist.filter((v) => v.id !== videoId)
+
+    // If current video was removed, set next video as current
+    if (room.currentVideo && room.currentVideo.id === videoId) {
+      room.currentVideo = room.playlist.length > 0 ? room.playlist[0] : null
+      room.currentTime = 0
+      room.isPlaying = false
+
+      // Notify all users about the video change
+      if (room.currentVideo) {
+        io.to(roomId).emit("video:change", {
+          videoId: room.currentVideo.videoId,
+          currentTime: 0,
+        })
+      }
+    }
+
+    // Broadcast updated playlist to all users
+    io.to(roomId).emit("playlist:update", room.playlist)
+  })
+
+  // Handle chat message
+  socket.on("chat:message", (message: string) => {
+    // Create message object
+    const chatMessage: ChatMessage = {
+      id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
+      userId,
+      userName,
+      userImage,
+      message,
+      timestamp: Date.now(),
+    }
+
+    // Add message to room
+    room.messages.push(chatMessage)
+
+    // Broadcast to all users including sender
+    io.to(roomId).emit("chat:message", chatMessage)
+  })
+
+  // Handle room settings update
+  socket.on("room:update", (settings: Partial<RoomState>) => {
+    // Only allow host to update room settings
+    if (userId === room.hostId) {
+      // Update room settings
+      Object.assign(room, settings)
+
+      // Broadcast updated room state to all users
+      io.to(roomId).emit("room:state", room)
+    }
+  })
+
+  // Handle disconnect
+  socket.on("disconnect", () => {
+    console.log(`User ${userName} (${userId}) disconnected from room ${roomId}`)
+
+    // Remove user from room
+    room.users = room.users.filter((u) => u.socketId !== socket.id)
+
+    // If room is empty, remove it after a delay (to allow for reconnections)
+    if (room.users.length === 0) {
+      setTimeout(
+        () => {
+          if (rooms.has(roomId) && rooms.get(roomId)!.users.length === 0) {
+            rooms.delete(roomId)
+            console.log(`Room ${roomId} removed due to inactivity`)
+          }
+        },
+        5 * 60 * 1000,
+      ) // 5 minutes
+    } else if (userId === room.hostId) {
+      // If host left, assign new host
+      room.hostId = room.users[0].id
+      room.users[0].isHost = true
+
+      // Notify all users about the new host
+      io.to(roomId).emit("room:state", room)
+    }
+
+    // Notify other users that someone left
+    socket.to(roomId).emit("user:left", userId)
+  })
+})
+
+// Clean up inactive rooms periodically
+setInterval(
+  () => {
+    const now = Date.now()
+    const inactiveThreshold = 24 * 60 * 60 * 1000 // 24 hours
+
+    for (const [roomId, room] of rooms.entries()) {
+      // Remove rooms that are empty and older than the threshold
+      if (room.users.length === 0 && now - room.createdAt > inactiveThreshold) {
+        rooms.delete(roomId)
+        console.log(`Room ${roomId} removed due to inactivity`)
+      }
+    }
+  },
+  60 * 60 * 1000,
+) // Check every hour
+
+// Start server
+const PORT = process.env.PORT || 3001
+httpServer.listen(PORT, () => {
+  console.log(`Socket.io server running on port ${PORT}`)
+})
+
