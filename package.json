@@ -16,6 +16,7 @@
   "dependencies": {
     "@auth/core": "latest",
     "@clerk/nextjs": "latest",
+    "@clerk/types": "^4.48.0",
     "@hookform/resolvers": "latest",
     "@radix-ui/react-accordion": "^1.2.2",
     "@radix-ui/react-alert-dialog": "^1.1.4",
@@ -52,6 +53,7 @@
     "dotenv": "latest",
     "embla-carousel-react": "8.5.1",
     "events": "latest",
+    "googleapis": "^146.0.0",
     "http": "latest",
     "input-otp": "1.4.1",
     "lucide-react": "^0.454.0",
