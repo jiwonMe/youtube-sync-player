@@ -1,7 +1,7 @@
 "use client"
 
-import { useState } from "react"
-import { useRouter } from "next/navigation"
+import { useState, useEffect } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import { useUser } from "@clerk/nextjs"
 import Link from "next/link"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -59,9 +59,13 @@ type Playlist = {
 
 export default function CreateRoomPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { user, isSignedIn } = useUser()
   const [isPasswordProtected, setIsPasswordProtected] = useState(false)
   const [selectedPlaylist, setSelectedPlaylist] = useState<Playlist | null>(null)
+  
+  // URL에서 방 이름 파라미터 가져오기
+  const nameFromUrl = searchParams.get('name')
 
   // Initialize form
   const form = useForm<z.infer<typeof formSchema>>({
@@ -73,6 +77,13 @@ export default function CreateRoomPage() {
       password: "",
     },
   })
+
+  // URL에서 전달된 방 이름이 있으면 폼에 설정
+  useEffect(() => {
+    if (nameFromUrl) {
+      form.setValue("roomName", nameFromUrl)
+    }
+  }, [nameFromUrl, form])
 
   // Handle form submission
   async function onSubmit(values: z.infer<typeof formSchema>) {
