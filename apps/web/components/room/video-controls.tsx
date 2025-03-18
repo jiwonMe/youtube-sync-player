@@ -53,6 +53,8 @@ interface VideoControlsProps {
   isAddingVideo: boolean
   /** 사용자가 비디오를 제어할 권한이 있는지 여부 */
   isAllowedToControl: boolean
+  /** 비디오 진행 핸들러 */
+  handleSeek: (seekTime: number) => void
 }
 
 /**
@@ -79,18 +81,28 @@ export function VideoControls({
   handleAddVideo,
   isAddingVideo,
   isAllowedToControl,
+  handleSeek,
 }: VideoControlsProps) {
   // 비디오 진행 바 클릭 시간 이동 핸들러
   const handleProgressBarClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!currentVideo || isLoading || !playerRef.current || !isAllowedToControl) return;
     
-    const progressBar = e.currentTarget;
-    const rect = progressBar.getBoundingClientRect();
-    const clickPosition = (e.clientX - rect.left) / rect.width;
-    const seekTime = videoDuration * clickPosition;
-    
-    if (playerRef.current && typeof playerRef.current.seekTo === 'function') {
-      playerRef.current.seekTo(seekTime);
+    try {
+      const progressBar = e.currentTarget;
+      const rect = progressBar.getBoundingClientRect();
+      const clickPosition = (e.clientX - rect.left) / rect.width;
+      const seekTime = videoDuration * clickPosition;
+      
+      console.log(`[Progress Bar] 시간 이동: ${seekTime.toFixed(2)}초`);
+      
+      // handleSeek 함수 호출
+      if (typeof handleSeek === 'function') {
+        handleSeek(seekTime);
+      } else {
+        console.error('[Error] handleSeek function is not defined');
+      }
+    } catch (error) {
+      console.error("Error seeking video:", error);
     }
   };
   

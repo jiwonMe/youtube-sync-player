@@ -145,7 +145,10 @@ export function YouTubePlayer({
 
   // isPlaying이 변경될 때 플레이어 상태 동기화
   useEffect(() => {
-    if (!isReady || !isPlayerMounted) return;
+    if (!isReady || !isPlayerMounted) {
+      console.log(`[isPlaying 동기화 무시] isReady=${isReady}, isPlayerMounted=${isPlayerMounted}`);
+      return;
+    }
     
     // isPlaying 값이 변경되었을 때만 실행
     if (isPlayingRef.current !== isPlaying) {
@@ -155,12 +158,40 @@ export function YouTubePlayer({
         const currentPlayerState = player.getPlayerState();
         setLastPlayerState(currentPlayerState);
         
+        // 플레이어 상태 이름으로 변환
+        const stateNames = {
+          '-1': 'unstarted',
+          '0': 'ended',
+          '1': 'playing',
+          '2': 'paused',
+          '3': 'buffering',
+          '5': 'video cued'
+        };
+        
         // 실제 플레이어 상태 확인 (1: playing, 2: paused)
         const isCurrentlyPlaying = currentPlayerState === 1;
         const isCurrentlyPaused = currentPlayerState === 2;
+        const isCurrentlyBuffering = currentPlayerState === 3;
         
+        console.log(`[isPlaying 동기화] 현재 플레이어 상태: ${currentPlayerState} (${stateNames[currentPlayerState as keyof typeof stateNames] || 'unknown'})`);
+        
+        // 버퍼링 중일 때는 명령을 지연시켜 적용
+        if (isCurrentlyBuffering) {
+          console.log("[상태 동기화] 버퍼링 중이므로 명령 지연");
+          setTimeout(() => {
+            safePlayerCall(innerPlayer => {
+              if (isPlaying) {
+                console.log("[상태 동기화] 버퍼링 후 재생 명령 실행");
+                innerPlayer.playVideo();
+              } else {
+                console.log("[상태 동기화] 버퍼링 후 일시정지 명령 실행");
+                innerPlayer.pauseVideo();
+              }
+            });
+          }, 300);
+          
         // 필요한 경우에만 상태 변경 적용
-        if (isPlaying && !isCurrentlyPlaying && currentPlayerState !== 3) { // 3: buffering
+        } else if (isPlaying && !isCurrentlyPlaying) {
           console.log("[상태 동기화] 재생 명령 실행");
           player.playVideo();
           setLastAction("play");
@@ -232,8 +263,44 @@ export function YouTubePlayer({
   const handleStateChange = (event: any) => {
     const newState = event.data;
     
+    // 상태 변화 자세한 로깅 추가
+    const stateNames = {
+      '-1': 'unstarted',
+      '0': 'ended',
+      '1': 'playing',
+      '2': 'paused',
+      '3': 'buffering',
+      '5': 'video cued'
+    };
+    
+    console.log(`[Youtube 플레이어 상태 변경] ${lastPlayerState} -> ${newState} (${stateNames[newState as keyof typeof stateNames] || 'unknown'})`);
+    
     // 상태가 변경되지 않았으면 이벤트를 무시
     if (newState === lastPlayerState) {
+      console.log('[상태 이벤트 무시] 이전 상태와 동일');
+      return;
+    }
+    
+    // 버퍼링에서 다른 상태로 갈 때는 이벤트를 발생시키지만, 상태가 실제로 변경된 것은 아님
+    if (lastPlayerState === 3 && (newState === 1 || newState === 2)) {
+      console.log('[버퍼링 이후 상태] 버퍼링 후 상태가 복원됨');
+      // 버퍼링에서 복원된 경우에는 상태는 업데이트하되 이벤트 전파는 제한적으로 함
+      setLastPlayerState(newState);
+      
+      // 버퍼링 이후 재생이 기대값과 일치하는지 확인
+      if ((newState === 1 && isPlaying) || (newState === 2 && !isPlaying)) {
+        console.log('[버퍼링 이후] 예상대로 상태 복원됨, 이벤트 전파 생략');
+        return;
+      } else {
+        console.log('[버퍼링 이후] 예상과 다른 상태로 복원됨, 이벤트 전파 필요');
+      }
+    }
+    
+    // 재생 종료 상태(0)는 항상 이벤트를 전파하여 자동 재생 처리
+    if (newState === 0) {
+      console.log('[재생 종료] 비디오 재생 종료 이벤트 전파');
+      setLastPlayerState(newState);
+      onStateChange(event);
       return;
     }
     
@@ -241,6 +308,7 @@ export function YouTubePlayer({
     setLastPlayerState(newState);
     
     // 부모 컴포넌트에 이벤트 전달
+    console.log('[상태 이벤트 전달] 부모 컴포넌트로 이벤트 전파');
     onStateChange(event);
   };
 

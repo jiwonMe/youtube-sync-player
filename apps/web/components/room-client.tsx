@@ -1,6 +1,6 @@
 "use client"
 
-import React, { useEffect, useState, useRef } from "react"
+import React, { useState, useRef, useEffect } from "react"
 import { useUser } from "@clerk/nextjs"
 import { Socket } from "socket.io-client"
 import {
@@ -8,22 +8,18 @@ import {
   MessageSquare,
   List,
   X,
-  Play,
   Youtube,
   Loader2,
-  Share,
-  Link,
-  ExternalLink,
   Settings,
   Crown,
   Plus,
   Lock,
-  Copy,
-  Check,
   Activity,
   User,
+  Check,
+  Copy,
+  Share,
 } from "lucide-react"
-import { DropResult } from "@hello-pangea/dnd"
 import {
   Dialog,
   DialogContent,
@@ -50,8 +46,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 
 import { connectToRoom } from "@/services/socket-service"
-import { extractYouTubeId, fetchVideoDetails, verifyRoomPassword } from "../utils/room-utils"
-import { RoomState, VideoItem, EventLog } from "@/types/room"
+import { RoomState, VideoItem } from "@/types/room"
 import { ChatPanel } from "@/components/room/chat-panel"
 import { PlaylistPanel } from "@/components/room/playlist-panel"
 import { UsersPanel } from "@/components/room/users-panel" 
@@ -62,14 +57,22 @@ import { PasswordDialog } from "@/components/room/password-dialog"
 import { EventLogPanel } from "@/components/room/event-log-panel"
 import { SettingsPanel } from "@/components/room/settings-panel"
 
+// 커스텀 훅 임포트
+import { useSocketEvents } from "@/components/room/use-socket-events"
+import { useVideoControls } from "@/components/room/use-video-controls"
+import { useRoomPassword } from "@/components/room/use-room-password"
+import { useRoomUI } from "@/components/room/use-room-ui"
+import { usePermissions } from "@/components/room/use-permissions"
+
 /**
  * 방 클라이언트 컴포넌트
  */
 export default function RoomClient({ roomId }: { roomId: string }) {
   const { user, isSignedIn, isLoaded } = useUser()
   const { toast } = useToast()
+  const playerRef = useRef<any>(null)
 
-  // State
+  // 기본 상태
   const [socket, setSocket] = useState<Socket | null>(null)
   const [roomState, setRoomState] = useState<RoomState>({
     roomName: "",
@@ -87,176 +90,131 @@ export default function RoomClient({ roomId }: { roomId: string }) {
     seekPermission: 'all-users',
     videoChangePermission: 'all-users',
   })
-  const [chatInput, setChatInput] = useState("")
-  const [isMuted, setIsMuted] = useState(false)
-  const [showMobile, setShowMobile] = useState<"chat" | "playlist" | "users" | "eventlog" | "settings" | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [videoProgress, setVideoProgress] = useState(0)
   const [videoDuration, setVideoDuration] = useState(0)
-  const [showAddVideoDialog, setShowAddVideoDialog] = useState(false)
-  const [videoUrl, setVideoUrl] = useState("")
-  const [isAddingVideo, setIsAddingVideo] = useState(false)
-  const [copySuccess, setCopySuccess] = useState(false)
-  const [copyRoomCodeSuccess, setCopyRoomCodeSuccess] = useState(false)
   const [isVideoChanging, setIsVideoChanging] = useState(false)
-  const [isPasswordProtected, setIsPasswordProtected] = useState(false)
-  const [isPasswordVerified, setIsPasswordVerified] = useState(false)
-  const [showPasswordDialog, setShowPasswordDialog] = useState(false)
-  const [roomInfo, setRoomInfo] = useState<{ roomName: string; isPasswordProtected: boolean }>({
-    roomName: "",
-    isPasswordProtected: false,
-  })
   const [lastSyncTime, setLastSyncTime] = useState(0)
   const [syncInterval, setSyncInterval] = useState<NodeJS.Timeout | null>(null)
   const [hasInitialSync, setHasInitialSync] = useState(false) // 최초 동기화 여부 추적
-  const [showChangeHostDialog, setShowChangeHostDialog] = useState(false)
 
-  const playerRef = useRef<any>(null)
-  const chatEndRef = useRef<HTMLDivElement>(null)
-  const lastKnownTimeRef = useRef<number>(0) // 마지막으로 알려진 시간 참조
+  // 현재 사용자가 호스트인지 확인하는 함수
+  const isUserHost = (): boolean => {
+    return Boolean(isSignedIn && user && user.id === roomState.hostId);
+  }
 
-  // 룸 정보 확인 (비밀번호 보호 여부 체크)
-  useEffect(() => {
-    const checkRoomProtection = async () => {
-      try {
-        const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3003';
-        const response = await fetch(`${socketUrl}/rooms/by-name?name=${roomId}`);
-        
-        if (!response.ok) {
-          throw new Error('Failed to fetch room info');
-        }
-        
-        const data = await response.json();
-        
-        if (data.exists) {
-          setRoomInfo({
-            roomName: data.roomName || "Room",
-            isPasswordProtected: data.isPasswordProtected
-          });
-          
-          setIsPasswordProtected(data.isPasswordProtected);
-          
-          // 비밀번호 보호된 방이면 비밀번호 입력 대화상자 표시
-          if (data.isPasswordProtected) {
-            setShowPasswordDialog(true);
-          } else {
-            // 비밀번호 보호되지 않은 방이면 바로 연결
-            setIsPasswordVerified(true);
-          }
-        }
-      } catch (error) {
-        console.error("Failed to check room protection:", error);
-        // 에러가 발생해도 일단 연결 시도
-        setIsPasswordVerified(true);
-      }
-    };
+  // 비밀번호 관련 기능 커스텀 훅 사용
+  const {
+    isPasswordProtected,
+    isPasswordVerified,
+    showPasswordDialog,
+    roomInfo,
+    setShowPasswordDialog,
+    handlePasswordVerify,
+    handlePasswordCancel
+  } = useRoomPassword({ roomId });
+
+  // UI 관련 기능 커스텀 훅 사용
+  const {
+    showMobile,
+    setShowMobile,
+    chatInput,
+    setChatInput,
+    videoUrl,
+    setVideoUrl,
+    showAddVideoDialog,
+    setShowAddVideoDialog,
+    copySuccess,
+    setCopySuccess,
+    copyRoomCodeSuccess,
+    setCopyRoomCodeSuccess,
+    isAddingVideo,
+    setIsAddingVideo,
+    showChangeHostDialog,
+    setShowChangeHostDialog,
+    isMuted,
+    setIsMuted,
+    chatEndRef,
+    handleShareRoom,
+    handleCopyRoomCode,
+    handleChatSubmit: uiHandleChatSubmit
+  } = useRoomUI({ roomId });
+
+  // 권한 관련 기능 커스텀 훅 사용
+  const {
+    handlePermissionChange,
+    handleVideoControlPermissionChange,
+    handleChangeUserHost,
+    transferHostToUser
+  } = usePermissions({
+    socket,
+    roomState,
+    isUserHost,
+    setRoomState,
+    showChangeHostDialog,
+    setShowChangeHostDialog
+  });
+
+  // 비디오 컨트롤 관련 기능 커스텀 훅 사용
+  const {
+    handlePlayerStateChange,
+    handlePlayPause,
+    handleVideoError,
+    handleNextVideo,
+    handleVideoSelect,
+    handleRemoveVideo,
+    handleAddVideo: addVideo,
+    handleToggleAutoplay,
+    handlePlaylistReorder,
+    handleSeek,
+    playerStateChangeLock,
+    lastKnownTimeRef,
+    lockPlayerStateChange
+  } = useVideoControls({
+    roomId,
+    socket,
+    roomState,
+    setRoomState,
+    playerRef,
+    isUserHost,
+    setIsVideoChanging,
+    isVideoChanging,
+    isSignedIn: !!isSignedIn,
+    user
+  });
+
+  // 비디오 추가 핸들러 - 커스텀 훅과 연결
+  const handleAddVideo = async () => {
+    if (!videoUrl.trim()) return;
     
-    checkRoomProtection();
-  }, [roomId]);
-
-  // 비밀번호 인증 함수
-  const handlePasswordVerify = async (password: string): Promise<boolean> => {
+    setIsAddingVideo(true);
     try {
-      const success = await verifyRoomPassword(roomId, password);
-      
+      const success = await addVideo(videoUrl);
       if (success) {
-        setIsPasswordVerified(true);
-        setShowPasswordDialog(false);
-        toast({
-          title: "인증 성공",
-          description: "방에 입장합니다.",
-        });
+        setShowAddVideoDialog(false);
+        setVideoUrl("");
       }
-      
-      return success;
     } catch (error) {
-      console.error("Failed to verify password:", error);
-      return false;
+      console.error("Failed to add video:", error);
+    } finally {
+      setIsAddingVideo(false);
     }
   };
 
-  // 플레이어 상태 변경 리스너
-  useEffect(() => {
-    if (!socket) return;
+  // 채팅 제출 핸들러 - 소켓 연결
+  const handleChatSubmit = (e: React.FormEvent) => {
+    uiHandleChatSubmit(e);
     
-    // 플레이어 상태 변경 핸들러
-    const handleStateChangeEvent = (data: { isPlaying: boolean; currentTime: number }) => {
-      console.log(`[서버 이벤트 수신] 플레이어 상태 변경: ${data.isPlaying ? '재생' : '일시정지'}, 시간: ${data.currentTime.toFixed(2)}`);
-      
-      // 상태 변경 잠금 설정 (중복 이벤트 방지)
-      lockPlayerStateChange();
-      
-      // roomState 업데이트
-      setRoomState((prev) => ({
-        ...prev,
-        isPlaying: data.isPlaying,
-        currentTime: data.currentTime,
-      }));
-    };
-    
-    // 플레이어 동기화 핸들러
-    const handleSyncEvent = (data: { isPlaying: boolean; currentTime: number; syncTime: number; videoId?: string }) => {
-      console.log(`[서버 동기화 수신] 플레이어 상태: ${data.isPlaying ? '재생' : '일시정지'}, 시간: ${data.currentTime.toFixed(2)}`);
-      
-      // 호스트가 아닌 경우만 동기화 처리 (호스트는 동기화를 보내는 쪽)
-      if (!isUserHost()) {
-        // 상태 변경 잠금 설정 (중복 이벤트 방지)
-        lockPlayerStateChange();
-        
-        // 비디오 ID가 변경되었는지 확인
-        if (data.videoId && (!roomState.currentVideo || roomState.currentVideo.videoId !== data.videoId)) {
-          const video = roomState.playlist.find((v) => v.videoId === data.videoId);
-          if (video) {
-            setIsVideoChanging(true);
-            setRoomState((prev) => ({
-              ...prev,
-              currentVideo: video,
-              currentTime: data.currentTime,
-              isPlaying: data.isPlaying,
-            }));
-            
-            setTimeout(() => {
-              setIsVideoChanging(false);
-            }, 1000);
-          }
-        } else {
-          // 비디오 시간과 상태만 업데이트
-          setRoomState((prev) => ({
-            ...prev,
-            currentTime: data.currentTime,
-            isPlaying: data.isPlaying,
-          }));
-        }
-      }
-    };
-    
-    // 시크 이벤트 핸들러
-    const handleSeekEvent = (data: { currentTime: number }) => {
-      console.log(`[서버 시크 수신] 시간: ${data.currentTime.toFixed(2)}`);
-      
-      // 상태 변경 잠금 설정 (중복 이벤트 방지)
-      lockPlayerStateChange();
-      
-      setRoomState((prev) => ({
-        ...prev,
-        currentTime: data.currentTime,
-      }));
-    };
-    
-    // 이벤트 리스너 등록
-    socket.on("player:stateChange", handleStateChangeEvent);
-    socket.on("player:sync", handleSyncEvent);
-    socket.on("player:seek", handleSeekEvent);
-    
-    // 컴포넌트 언마운트 시 이벤트 리스너 제거
-    return () => {
-      socket.off("player:stateChange", handleStateChangeEvent);
-      socket.off("player:sync", handleSyncEvent);
-      socket.off("player:seek", handleSeekEvent);
-    };
-  }, [socket, roomState.currentVideo, roomState.playlist]);
-  
-  // Connect to socket when component mounts - 기존 이벤트 리스너 정리
+    if (chatInput.trim() === "") return;
+
+    if (socket) {
+      socket.emit("chat:message", chatInput);
+    }
+
+    setChatInput("");
+  };
+
+  // Connect to socket when component mounts
   useEffect(() => {
     if (!isLoaded || !isPasswordVerified) return;
 
@@ -289,7 +247,7 @@ export default function RoomClient({ roomId }: { roomId: string }) {
     })
 
     // 이벤트 로그 리스너 추가
-    socketIo.on("room:eventLog", (eventLog: EventLog) => {
+    socketIo.on("room:eventLog", (eventLog) => {
       setRoomState((prev) => ({
         ...prev,
         eventLogs: [...prev.eventLogs, eventLog]
@@ -431,9 +389,20 @@ export default function RoomClient({ roomId }: { roomId: string }) {
       if (syncInterval) {
         clearInterval(syncInterval);
       }
+      
       socketIo.off("room:eventLog")
+      socketIo.off("room:state")
+      socketIo.off("autoplay:toggle")
+      socketIo.off("video:change")
+      socketIo.off("playlist:update")
+      socketIo.off("playlist:reorder")
+      socketIo.off("chat:message")
+      socketIo.off("user:joined")
+      socketIo.off("user:left")
+      socketIo.off("host:changed")
+      socketIo.off("video:controlPermission")
     }
-  }, [roomId, user, isSignedIn, isLoaded, isPasswordVerified, hasInitialSync, roomState.hostId])
+  }, [roomId, user, isSignedIn, isLoaded, isPasswordVerified, hasInitialSync, toast])
 
   // 호스트 동기화 메커니즘 - 1초마다 재생 시간 전송
   useEffect(() => {
@@ -504,424 +473,35 @@ export default function RoomClient({ roomId }: { roomId: string }) {
     return () => clearInterval(interval)
   }, [roomState.isPlaying])
 
-  // 현재 사용자가 호스트인지 확인하는 함수
-  const isUserHost = (): boolean => {
-    return Boolean(isSignedIn && user && user.id === roomState.hostId);
-  }
-
-  // 상태 변경 방지를 위한 디바운스 메커니즘
-  const playerStateChangeLock = useRef<boolean>(false);
-  const playerStateChangeTimeout = useRef<NodeJS.Timeout | null>(null);
-  
-  // 상태 변경 잠금 설정 함수
-  const lockPlayerStateChange = () => {
-    playerStateChangeLock.current = true;
-    
-    // 이전 타이머가 있다면 정리
-    if (playerStateChangeTimeout.current) {
-      clearTimeout(playerStateChangeTimeout.current);
-    }
-    
-    // 500ms 후에 잠금 해제
-    playerStateChangeTimeout.current = setTimeout(() => {
-      playerStateChangeLock.current = false;
-      playerStateChangeTimeout.current = null;
-    }, 500);
-  };
-
-  // YouTube 플레이어 상태 변경 핸들러
-  const handlePlayerStateChange = (event: any) => {
-    // YouTube player state codes:
-    // -1: unstarted, 0: ended, 1: playing, 2: paused, 3: buffering, 5: video cued
-    const playerState = event.data;
-
-    // 디버깅을 위한 로그
-    console.log(`[Player 이벤트] 상태 변경: ${playerState}, 잠금 상태: ${playerStateChangeLock.current}`);
-
-    // 비디오가 변경 중이거나 상태 변경이 잠겨있으면 이벤트 무시
-    if (isVideoChanging || playerStateChangeLock.current) {
-      console.log("[Player 이벤트] 무시됨: 비디오 변경 중 또는 잠금 상태");
-      return;
-    }
-
-    // 호스트가 아니면 직접 상태를 변경하지 않음
-    if (!isUserHost()) {
-      console.log("[Player 이벤트] 무시됨: 호스트 아님");
-      return;
-    }
-
-    // 현재 재생 시간 확인
-    const playerInstance = playerRef.current;
-    if (playerInstance) {
-      const currentTime = playerInstance.getCurrentTime() || 0;
-      
-      // 시크 감지 - 마지막 알려진 시간과 현재 시간의 차이가 3초 이상이면 시크로 간주
-      if (Math.abs(currentTime - lastKnownTimeRef.current) > 3) {
-        console.log(`[시크 감지] 시간 이동: ${lastKnownTimeRef.current}s → ${currentTime}s`);
-        // 시크 이벤트 전파
-        socket?.emit('player:seek', {
-          currentTime: currentTime
-        });
-      }
-      
-      // 현재 시간 업데이트
-      lastKnownTimeRef.current = currentTime;
-    }
-
-    // 상태 변경 시에만 처리
-    if (playerState === 1 && !roomState.isPlaying) { // Playing → UI는 일시정지 상태
-      console.log(`[상태 변경 감지] 실제 플레이어: 재생 중, UI: 일시정지 상태`);
-      
-      // UI 상태 업데이트
-      setRoomState(prev => ({...prev, isPlaying: true}));
-      
-      // 상태 변경 잠금 설정
-      lockPlayerStateChange();
-      
-      // 서버에 상태 변경 전달
-      socket?.emit('player:stateChange', {
-        roomId: roomId,
-        stateChange: {
-          playing: true,
-          currentTime: playerRef.current.getCurrentTime() || 0,
-          playbackRate: playerRef.current.getPlaybackRate() || 1
-        }
-      });
-      
-      console.log(`[재생 이벤트 발송] ${isSignedIn ? `${user?.firstName} ${user?.lastName}` : "Guest"}`);
-    } 
-    else if (playerState === 2 && roomState.isPlaying) { // Paused → UI는 재생 상태
-      console.log(`[상태 변경 감지] 실제 플레이어: 일시정지, UI: 재생 중`);
-      
-      // UI 상태 업데이트
-      setRoomState(prev => ({...prev, isPlaying: false}));
-      
-      // 상태 변경 잠금 설정
-      lockPlayerStateChange();
-      
-      // 서버에 상태 변경 전달
-      socket?.emit('player:stateChange', {
-        roomId: roomId,
-        stateChange: {
-          playing: false,
-          currentTime: playerRef.current.getCurrentTime() || 0,
-          playbackRate: playerRef.current.getPlaybackRate() || 1
-        }
-      });
-      
-      console.log(`[일시정지 이벤트 발송] ${isSignedIn ? `${user?.firstName} ${user?.lastName}` : "Guest"}`);
-    } 
-    else if (playerState === 0 && roomState.autoplay) { // Ended with autoplay
-      // 동영상 종료 시 다음 동영상 재생 (자동 재생이 활성화된 경우)
-      console.log("[비디오 종료] 자동 재생으로 다음 비디오 재생");
-      handleNextVideo(true);
-    }
-  };
-
-  // 재생/일시정지 핸들러
-  const handlePlayPause = () => {
-    // 비디오 제어 권한 확인
-    const isHost = isUserHost();
-    const hasPermission = roomState.videoControlPermission === 'all-users' || isHost;
-    
-    if (!hasPermission) {
-      // 권한이 없으면 알림
-      toast({
-        title: "권한이 없습니다",
-        description: "방장만 영상을 제어할 수 있습니다.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // 비디오가 없으면 동작하지 않음
-    if (!roomState.currentVideo || isVideoChanging) {
-      console.log("[버튼 클릭] 무시: 비디오 없음 또는 비디오 변경 중");
-      return;
-    }
-
-    // 상태 변경 중이면 무시
-    if (playerStateChangeLock.current) {
-      console.log("[버튼 클릭] 무시: 상태 변경 잠금 활성화");
-      return;
-    }
-
-    try {
-      // 현재 플레이어의 실제 상태 확인
-      const currentPlayerState = playerRef.current?.getPlayerState?.();
-      const isCurrentlyPlaying = currentPlayerState === 1; // 1: playing
-      
-      // 현재 UI 상태와 플레이어 상태가 일치하는지 확인
-      if (roomState.isPlaying !== isCurrentlyPlaying) {
-        console.log(`[상태 불일치 감지] UI: ${roomState.isPlaying ? '재생' : '일시정지'}, 플레이어: ${isCurrentlyPlaying ? '재생' : '일시정지'}`);
-      }
-      
-      // UI 상태 변경
-      const newIsPlaying = !roomState.isPlaying;
-      console.log(`[버튼 클릭] ${newIsPlaying ? '재생' : '일시정지'} 버튼 클릭`);
-      
-      // 상태 업데이트 및 중복 이벤트 방지를 위한 잠금 설정
-      lockPlayerStateChange();
-      
-      // UI 상태 업데이트
-      setRoomState((prev) => ({ ...prev, isPlaying: newIsPlaying }));
-  
-      // 소켓 이벤트 전송
-      if (socket) {
-        const currentTime = playerRef.current?.getCurrentTime() || 0;
-        const playbackRate = playerRef.current?.getPlaybackRate() || 1;
-        
-        socket.emit("player:stateChange", {
-          roomId: roomId,
-          stateChange: {
-            playing: newIsPlaying,
-            currentTime: currentTime,
-            playbackRate: playbackRate
-          }
-        });
-        
-        console.log(`[상태 변경 이벤트 발송] playing: ${newIsPlaying}, time: ${currentTime.toFixed(2)}`);
-      }
-    } catch (err) {
-      console.error("[버튼 클릭 오류]", err);
-    }
-  };
-
-  // 비디오 에러 처리 함수
-  const handleVideoError = (errorCode: number) => {
-    console.error(`YouTube 비디오 에러 발생: ${errorCode}`)
-    
-    let errorMessage = "비디오 재생 중 오류가 발생했습니다."
-    
-    switch (errorCode) {
-      case 2:
-        errorMessage = "잘못된 비디오 URL 매개변수입니다."
-        break
-      case 5:
-        errorMessage = "HTML5 플레이어에서 재생할 수 없는 비디오입니다."
-        break
-      case 100:
-        errorMessage = "비디오를 찾을 수 없습니다. 삭제되었거나 비공개로 설정되었을 수 있습니다."
-        break
-      case 101:
-      case 150:
-        errorMessage = "비디오 소유자가 임베드 재생을 허용하지 않습니다."
-        break
-    }
-    
-    toast({
-      title: "비디오 재생 오류",
-      description: `${errorMessage} 다음 비디오로 자동 전환합니다.`,
-      variant: "destructive",
-    })
-    
-    setIsVideoChanging(true)
-    handleNextVideo(true)
-  }
-
-  // 다음 비디오 핸들러
-  const handleNextVideo = (forceNext: boolean = false) => {
-    const currentIndex = roomState.playlist.findIndex((video) => video.id === roomState.currentVideo?.id)
-    const isVideoEnded = playerRef.current?.getPlayerState?.() === 0
-    const isAutoplayDisabled = !roomState.autoplay
-    const isUserInitiated = !isVideoEnded || forceNext
-    
-    if (isAutoplayDisabled && isVideoEnded && !isUserInitiated) {
-      return
-    }
-
-    if (currentIndex < roomState.playlist.length - 1) {
-      const nextVideo = roomState.playlist[currentIndex + 1]
-      setIsVideoChanging(true)
-      
-      if (socket) {
-        socket.emit("video:change", nextVideo.id)
-        
-        setRoomState((prev) => ({
-          ...prev,
-          currentVideo: nextVideo,
-          currentTime: 0,
-          isPlaying: true,
-        }))
-        
-        setTimeout(() => {
-          setIsVideoChanging(false)
-        }, 1000)
-      }
-    }
-  }
-
-  // 채팅 제출 핸들러
-  const handleChatSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-
-    if (chatInput.trim() === "") return
-
-    if (socket) {
-      socket.emit("chat:message", chatInput)
-    }
-
-    setChatInput("")
-  }
-
-  // 비디오 선택 핸들러
-  const handleVideoSelect = (video: VideoItem) => {
-    if (roomState.currentVideo?.id === video.id) {
-      return
-    }
-    
-    setIsVideoChanging(true)
-    
-    if (socket) {
-      socket.emit("video:change", video.id)
-      
-      setRoomState((prev) => ({
-        ...prev,
-        currentVideo: video,
-        currentTime: 0,
-        isPlaying: true,
-      }))
-      
-      setTimeout(() => {
-        setIsVideoChanging(false)
-      }, 1000)
-    }
-  }
-
-  // 비디오 제거 핸들러
-  const handleRemoveVideo = (videoId: string, e: React.MouseEvent) => {
-    e.stopPropagation() // 부모 onClick 이벤트 전파 방지
-
-    if (socket) {
-      socket.emit("playlist:remove", videoId)
-    }
-  }
-
-  // 비디오 추가 핸들러
-  const handleAddVideo = async () => {
-    if (!videoUrl.trim()) return
-
-    setIsAddingVideo(true)
-
-    try {
-      const videoId = extractYouTubeId(videoUrl)
-
-      if (!videoId) {
-        alert("Invalid YouTube URL")
-        return
-      }
-
-      const videoDetails = await fetchVideoDetails(videoId)
-
-      if (!videoDetails) {
-        alert("Failed to fetch video details")
-        return
-      }
-
-      const isPlaylistEmpty = roomState.playlist.length === 0 || !roomState.currentVideo
-      
-      const newVideo = {
-        id: `video-${Date.now()}`,
-        videoId,
-        title: videoDetails.title,
-        thumbnailUrl: videoDetails.thumbnailUrl,
-      }
-
-      if (socket) {
-        socket.emit("playlist:add", newVideo)
-        
-        if (isPlaylistEmpty) {
-          setRoomState((prev) => ({
-            ...prev,
-            currentVideo: newVideo,
-            isPlaying: true,
-            currentTime: 0,
-          }))
-        }
-      }
-
-      setShowAddVideoDialog(false)
-      setVideoUrl("")
-    } catch (error) {
-      console.error("Error adding video:", error)
-      alert("Failed to add video")
-    } finally {
-      setIsAddingVideo(false)
-    }
-  }
-
-  // 방 링크 공유
-  const handleShareRoom = () => {
-    if (navigator.share) {
-      navigator.share({
-        title: `Join my YouTube room: ${roomState.roomName}`,
-        text: `I'm watching YouTube videos in ${roomState.roomName}. Join me!`,
-        url: window.location.href,
-      })
-    } else {
-      navigator.clipboard.writeText(window.location.href)
-      setCopySuccess(true)
-      setTimeout(() => setCopySuccess(false), 2000)
-    }
-  }
-  
-  // 방 코드 복사
-  const handleCopyRoomCode = () => {
-    navigator.clipboard.writeText(roomId)
-    setCopyRoomCodeSuccess(true)
-    setTimeout(() => setCopyRoomCodeSuccess(false), 2000)
-    
-    toast({
-      title: "방 코드가 복사되었습니다",
-      description: "친구에게 공유하여 함께 시청해보세요",
-    })
-  }
-
-  // 자동 재생 토글 핸들러
-  const handleToggleAutoplay = () => {
-    const newAutoplay = !roomState.autoplay
-    setRoomState((prev) => ({ ...prev, autoplay: newAutoplay }))
-
-    if (socket) {
-      const currentTime = playerRef.current?.getCurrentTime() || 0
-      socket.emit("autoplay:toggle", {
-        isPlaying: roomState.isPlaying,
-        currentTime: currentTime,
-        autoplay: roomState.autoplay,
-      })
-    }
-  }
-
-  // 플레이리스트 재정렬 핸들러
-  const handlePlaylistReorder = (result: DropResult) => {
-    if (!result.destination) return
-    if (result.destination.index === result.source.index) return
-    
-    const newPlaylist = [...roomState.playlist]
-    const [movedItem] = newPlaylist.splice(result.source.index, 1)
-    newPlaylist.splice(result.destination.index, 0, movedItem)
-    
-    setRoomState(prev => ({
-      ...prev,
-      playlist: newPlaylist
-    }))
-    
-    if (socket) {
-      socket.emit("playlist:reorder", newPlaylist)
-    }
-  }
-
-  // 비밀번호 입력 취소 처리
-  const handlePasswordCancel = () => {
-    // 취소 시 이전 페이지로 이동
-    window.history.back();
-  };
+  // 소켓 이벤트 핸들러 커스텀 훅 사용
+  useSocketEvents({
+    socket,
+    roomState,
+    setRoomState,
+    isUserHost,
+    isSignedIn: !!isSignedIn,
+    user,
+    setIsLoading,
+    setIsVideoChanging,
+    playerRef,
+    setHasInitialSync,
+    hasInitialSync,
+    lastKnownTimeRef,
+    lockPlayerStateChange
+  });
 
   // 현재 사용자가 방장인지 여부
-  const isHost = isSignedIn && user?.id === roomState.hostId
+  const isHost = isSignedIn && user?.id === roomState.hostId;
   const hasNextVideo = roomState.currentVideo 
     ? roomState.playlist.findIndex((v) => v.id === roomState.currentVideo?.id) < roomState.playlist.length - 1
-    : false
+    : false;
+
+  // 컴포넌트에 맞게 비디오 핸들러 래핑
+  const handleVideoSelectWrapper = (video: VideoItem) => handleVideoSelect(video.videoId);
+  const handleRemoveVideoWrapper = (videoId: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    handleRemoveVideo(videoId);
+  };
 
   // 비밀번호 보호된 방이고, 아직 인증되지 않은 경우 로딩 상태 표시
   if (isPasswordProtected && !isPasswordVerified) {
@@ -938,139 +518,6 @@ export default function RoomClient({ roomId }: { roomId: string }) {
       </>
     );
   }
-
-  // 권한 변경 핸들러
-  const handlePermissionChange = (type: string, value: 'host-only' | 'all-users') => {
-    if (!socket || !isUserHost()) return;
-    
-    // 권한 타입에 따라 이벤트 및 상태 업데이트
-    switch (type) {
-      case 'videoControl':
-        // 기존 비디오 제어 권한 변경 (하위 호환성 유지)
-        socket.emit("video:controlPermission", value);
-        
-        // 로컬 상태 업데이트
-        setRoomState((prev) => ({
-          ...prev,
-          videoControlPermission: value,
-        }));
-        
-        // 알림 표시
-        toast({
-          title: "비디오 제어 권한 변경",
-          description: value === 'host-only' 
-            ? "방장만 비디오를 제어할 수 있습니다." 
-            : "모든 참가자가 비디오를 제어할 수 있습니다.",
-        });
-        break;
-        
-      case 'play':
-        // 재생/일시정지 권한 변경
-        socket.emit("permission:update", { type: "play", value });
-        
-        // 로컬 상태 업데이트
-        setRoomState((prev) => ({
-          ...prev,
-          playPermission: value,
-        }));
-        
-        // 알림 표시
-        toast({
-          title: "재생/일시정지 권한 변경",
-          description: value === 'host-only' 
-            ? "방장만 영상을 재생/일시정지할 수 있습니다." 
-            : "모든 참가자가 영상을 재생/일시정지할 수 있습니다.",
-        });
-        break;
-        
-      case 'seek':
-        // 시크 권한 변경
-        socket.emit("permission:update", { type: "seek", value });
-        
-        // 로컬 상태 업데이트
-        setRoomState((prev) => ({
-          ...prev,
-          seekPermission: value,
-        }));
-        
-        // 알림 표시
-        toast({
-          title: "시크 권한 변경",
-          description: value === 'host-only' 
-            ? "방장만 영상 시간을 이동할 수 있습니다." 
-            : "모든 참가자가 영상 시간을 이동할 수 있습니다.",
-        });
-        break;
-        
-      case 'videoChange':
-        // 비디오 변경 권한 변경
-        socket.emit("permission:update", { type: "videoChange", value });
-        
-        // 로컬 상태 업데이트
-        setRoomState((prev) => ({
-          ...prev,
-          videoChangePermission: value,
-        }));
-        
-        // 알림 표시
-        toast({
-          title: "영상 변경 권한 변경",
-          description: value === 'host-only' 
-            ? "방장만 영상을 변경할 수 있습니다." 
-            : "모든 참가자가 영상을 변경할 수 있습니다.",
-        });
-        break;
-    }
-  };
-  
-  // 비디오 제어 권한 변경 핸들러 (하위 호환성 유지)
-  const handleVideoControlPermissionChange = (permission: 'host-only' | 'all-users') => {
-    handlePermissionChange('videoControl', permission);
-  };
-
-  // 호스트 권한 이전 핸들러
-  const handleChangeUserHost = () => {
-    // 현재 호스트가 아니면 권한 없음
-    if (!isUserHost()) {
-      toast({
-        title: "권한이 없습니다",
-        description: "방장만 호스트 권한을 이전할 수 있습니다.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // 다른 사용자가 없으면 이전할 수 없음
-    if (roomState.users.length <= 1) {
-      toast({
-        title: "권한 이전 불가",
-        description: "방에 다른 사용자가 없어 권한을 이전할 수 없습니다.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    // 호스트 권한 이전 대화상자 표시
-    setShowChangeHostDialog(true);
-  };
-
-  // 다른 사용자에게 호스트 권한 이전
-  const transferHostToUser = (targetUserId: string) => {
-    if (!socket) return;
-    
-    socket.emit("room:update", {
-      hostId: targetUserId
-    });
-    
-    // 대화상자 닫기
-    setShowChangeHostDialog(false);
-    
-    // 알림 표시
-    toast({
-      title: "호스트 권한 이전",
-      description: "호스트 권한이 다른 사용자에게 이전되었습니다.",
-    });
-  };
 
   return (
     <>
@@ -1247,7 +694,8 @@ export default function RoomClient({ roomId }: { roomId: string }) {
               setVideoUrl={setVideoUrl}
               handleAddVideo={handleAddVideo}
               isAddingVideo={isAddingVideo}
-              isAllowedToControl={roomState.videoControlPermission === 'all-users' || isUserHost()}
+              isAllowedToControl={roomState.videoControlPermission === 'all-users' || isUserHost() || false}
+              handleSeek={handleSeek}
             />
 
             {/* 모바일 네비게이션 버튼 */}
@@ -1286,8 +734,8 @@ export default function RoomClient({ roomId }: { roomId: string }) {
               <UpcomingPlaylist
                 playlist={roomState.playlist}
                 currentVideo={roomState.currentVideo}
-                handleVideoSelect={handleVideoSelect}
-                handleRemoveVideo={handleRemoveVideo}
+                handleVideoSelect={handleVideoSelectWrapper}
+                handleRemoveVideo={handleRemoveVideoWrapper}
                 isHost={!!isHost}
                 handlePlaylistReorder={handlePlaylistReorder}
                 socket={socket}
@@ -1341,8 +789,8 @@ export default function RoomClient({ roomId }: { roomId: string }) {
                   <PlaylistPanel
                     playlist={roomState.playlist}
                     currentVideo={roomState.currentVideo}
-                    handleVideoSelect={handleVideoSelect}
-                    handleRemoveVideo={handleRemoveVideo}
+                    handleVideoSelect={handleVideoSelectWrapper}
+                    handleRemoveVideo={handleRemoveVideoWrapper}
                     isLoading={isLoading}
                     isHost={isHost}
                     handlePlaylistReorder={handlePlaylistReorder}
@@ -1413,8 +861,8 @@ export default function RoomClient({ roomId }: { roomId: string }) {
                   <PlaylistPanel
                     playlist={roomState.playlist}
                     currentVideo={roomState.currentVideo}
-                    handleVideoSelect={handleVideoSelect}
-                    handleRemoveVideo={handleRemoveVideo}
+                    handleVideoSelect={handleVideoSelectWrapper}
+                    handleRemoveVideo={handleRemoveVideoWrapper}
                     isLoading={isLoading}
                     isHost={isHost}
                     handlePlaylistReorder={handlePlaylistReorder}
@@ -1470,47 +918,6 @@ export default function RoomClient({ roomId }: { roomId: string }) {
         </div>
       </div>
       <Toaster />
-
-      {/* Mobile bottom navigation bar */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 border-t bg-background/95 backdrop-blur-sm">
-        <div className="flex items-center justify-around">
-          <Button 
-            variant="ghost" 
-            onClick={() => setShowMobile("chat")}
-            className="flex-1 py-6"
-          >
-            <MessageSquare className="w-5 h-5" />
-          </Button>
-          <Button 
-            variant="ghost" 
-            onClick={() => setShowMobile("playlist")}
-            className="flex-1 py-6"
-          >
-            <List className="w-5 h-5" />
-          </Button>
-          <Button 
-            variant="ghost" 
-            onClick={() => setShowMobile("users")}
-            className="flex-1 py-6"
-          >
-            <Users className="w-5 h-5" />
-          </Button>
-          <Button 
-            variant="ghost" 
-            onClick={() => setShowMobile("eventlog")}
-            className="flex-1 py-6"
-          >
-            <Activity className="w-5 h-5" />
-          </Button>
-          <Button 
-            variant="ghost" 
-            onClick={() => setShowMobile("settings")}
-            className="flex-1 py-6"
-          >
-            <Settings className="w-5 h-5" />
-          </Button>
-        </div>
-      </div>
 
       {/* 호스트 권한 이전 대화상자 */}
       <Dialog open={showChangeHostDialog} onOpenChange={setShowChangeHostDialog}>

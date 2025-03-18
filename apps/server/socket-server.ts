@@ -830,6 +830,86 @@ io.on("connection", (socket) => {
     }
   });
 
+  // 재생 이벤트 핸들러 추가
+  socket.on("player:play", () => {
+    if (!room) return;
+    
+    // 현재 사용자 가져오기
+    const currentUser = room.users.find(u => u.id === userId);
+    if (!currentUser) {
+      console.log(`[오류] 요청한 사용자를 룸(${roomId})에서 찾을 수 없습니다. 소켓 ID: ${socket.id}`);
+      return;
+    }
+    
+    // 비디오 제어 권한 확인
+    const hasPermission = room.videoControlPermission === 'all-users' || currentUser.isHost;
+    if (!hasPermission) {
+      console.log(`[오류] 사용자(${currentUser.name})에게 비디오 제어 권한이 없습니다. 무시합니다.`);
+      return;
+    }
+    
+    // 이미 재생 중이면 무시
+    if (room.isPlaying) {
+      console.log(`[상태 변경 무시] 이미 재생 중입니다.`);
+      return;
+    }
+    
+    console.log(`[상태 변경] 룸(${roomId})에서 ${currentUser.name}님이 영상을 재생했습니다.`);
+    
+    // 현재 시간 가져오기 (방 상태 기록용)
+    const now = Date.now();
+    
+    // 방 상태 업데이트
+    room.isPlaying = true;
+    room.lastSyncTime = now;
+    
+    // 다른 모든 참가자들에게 전파
+    socket.to(roomId).emit("player:play");
+    
+    // 이벤트 로그 생성
+    createEventLog(roomId, currentUser, 'play');
+  });
+  
+  // 일시정지 이벤트 핸들러 추가
+  socket.on("player:pause", () => {
+    if (!room) return;
+    
+    // 현재 사용자 가져오기
+    const currentUser = room.users.find(u => u.id === userId);
+    if (!currentUser) {
+      console.log(`[오류] 요청한 사용자를 룸(${roomId})에서 찾을 수 없습니다. 소켓 ID: ${socket.id}`);
+      return;
+    }
+    
+    // 비디오 제어 권한 확인
+    const hasPermission = room.videoControlPermission === 'all-users' || currentUser.isHost;
+    if (!hasPermission) {
+      console.log(`[오류] 사용자(${currentUser.name})에게 비디오 제어 권한이 없습니다. 무시합니다.`);
+      return;
+    }
+    
+    // 이미 일시정지 중이면 무시
+    if (!room.isPlaying) {
+      console.log(`[상태 변경 무시] 이미 일시정지 중입니다.`);
+      return;
+    }
+    
+    console.log(`[상태 변경] 룸(${roomId})에서 ${currentUser.name}님이 영상을 일시정지했습니다.`);
+    
+    // 현재 시간 가져오기 (방 상태 기록용)
+    const now = Date.now();
+    
+    // 방 상태 업데이트
+    room.isPlaying = false;
+    room.lastSyncTime = now;
+    
+    // 다른 모든 참가자들에게 전파
+    socket.to(roomId).emit("player:pause");
+    
+    // 이벤트 로그 생성
+    createEventLog(roomId, currentUser, 'pause');
+  });
+
   // 비디오 제어 권한 설정 변경 이벤트 핸들러 추가
   socket.on("video:controlPermission", (permission: 'host-only' | 'all-users') => {
     if (!room) return;
