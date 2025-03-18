@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, Suspense } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { useUser } from "@clerk/nextjs"
 import Link from "next/link"
@@ -388,7 +388,9 @@ function CreateRoomSection() {
 export default function CreateRoomPage() {
   return (
     <div className="flex flex-col min-h-screen bg-gradient-to-b from-background via-background to-background/95">
-      <CreateRoomSection />
+      <Suspense fallback={<div className="flex justify-center items-center h-screen">Loading...</div>}>
+        <CreateRoomSection />
+      </Suspense>
     </div>
   )
 }
