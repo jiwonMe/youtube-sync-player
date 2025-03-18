@@ -1,0 +1,19 @@
+[build]
+builder = "dockerfile"
+dockerfilePath = "apps/server/Dockerfile"
+
+[deploy]
+startCommand = "node apps/server/dist/socket-server.js"
+healthcheckPath = "/health"
+healthcheckTimeout = 300
+restartPolicyType = "on-failure"
+restartPolicyMaxRetries = 10
+
+[environments]
+  [environments.production]
+  numReplicas = 1
+  port = 3000
+  
+  [environments.development]
+  numReplicas = 1
+  port = 3000
