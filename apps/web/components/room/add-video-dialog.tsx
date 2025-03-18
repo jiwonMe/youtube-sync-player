@@ -20,11 +20,36 @@ import { Plus, Youtube, Link as LinkIcon } from "lucide-react"
  * @returns 변환된 URL
  */
 const convertMusicYoutubeUrl = (url: string): string => {
-  // YouTube Music URL인 경우 일반 YouTube URL로 변환
-  if (url.includes('music.youtube.com')) {
-    return url.replace('music.youtube.com', 'www.youtube.com');
+  try {
+    // URL이 비어있거나 유효하지 않은 경우 원본 반환
+    if (!url || !url.trim()) return url;
+    
+    // YouTube Music URL인 경우 일반 YouTube URL로 변환
+    if (url.includes('music.youtube.com')) {
+      // URL 객체 생성
+      const urlObj = new URL(url);
+      
+      // 도메인을 일반 YouTube로 변경
+      urlObj.hostname = 'www.youtube.com';
+      
+      // video ID 확인 (필수 파라미터)
+      const videoId = urlObj.searchParams.get('v');
+      
+      if (!videoId) return url; // video ID가 없으면 원본 반환
+      
+      // 새 URL 객체 생성 (필수 파라미터만 포함)
+      const newUrl = new URL('https://www.youtube.com/watch');
+      newUrl.searchParams.set('v', videoId);
+      
+      return newUrl.toString();
+    }
+    
+    return url;
+  } catch (error) {
+    // URL 파싱에 실패한 경우 원본 반환
+    console.error('YouTube URL 변환 오류:', error);
+    return url;
   }
-  return url;
 };
 
 /**
