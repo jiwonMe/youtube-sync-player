@@ -24,8 +24,6 @@ const nextConfig = {
   generateBuildId: async () => {
     return 'build-' + new Date().getTime();
   },
-  // Add trailingSlash true to ensure route compatibility
-  trailingSlash: true
 }
 
 mergeConfig(nextConfig, userConfig)
