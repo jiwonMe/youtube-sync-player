@@ -3,7 +3,7 @@ builder = "dockerfile"
 dockerfilePath = "apps/server/Dockerfile"
 
 [deploy]
-startCommand = "node apps/server/dist/socket-server.js"
+startCommand = "node /app/apps/server/dist/socket-server.js"
 healthcheckPath = "/health"
 healthcheckTimeout = 300
 restartPolicy = "on-failure"

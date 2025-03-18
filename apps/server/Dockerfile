@@ -37,6 +37,10 @@ COPY --from=builder /app/apps/server/dist ./apps/server/dist
 RUN npm install -g pnpm
 RUN pnpm install --prod
 
+# 디버깅을 위한 디렉토리 구조 출력
+RUN ls -la /app
+RUN ls -la /app/apps/server/dist || echo "dist 디렉토리가 없습니다"
+
 # 서버 실행
 EXPOSE 3000
-CMD ["node", "apps/server/dist/socket-server.js"]
+CMD ["node", "/app/apps/server/dist/socket-server.js"]
