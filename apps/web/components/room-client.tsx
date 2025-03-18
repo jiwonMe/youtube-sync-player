@@ -16,6 +16,7 @@ import {
   ExternalLink,
   Settings,
   Crown,
+  Plus,
 } from "lucide-react"
 import { DropResult } from "@hello-pangea/dnd"
 
@@ -482,50 +483,41 @@ export default function RoomClient({ roomId }: { roomId: string }) {
     <>
       <div className="flex flex-col h-[calc(100vh-4rem)]">
         {/* 방 정보 상단바 */}
-        <div className="bg-muted p-2 px-4 flex items-center justify-between">
+        <div className="bg-muted/80 p-2 px-4 flex items-center justify-between border-b sticky top-0 z-10 backdrop-blur-sm">
           <div className="flex items-center">
-            <h1 className="font-semibold truncate max-w-[200px] md:max-w-md">
-              {isLoading ? <Skeleton className="h-6 w-40" /> : roomState.roomName}
+            <h1 className="font-semibold truncate max-w-[200px] md:max-w-md flex items-center">
+              {isLoading ? (
+                <Skeleton className="h-6 w-40" />
+              ) : (
+                <>
+                  <Crown className="h-4 w-4 mr-2 text-amber-500 hidden sm:inline-block" />
+                  {roomState.roomName}
+                </>
+              )}
             </h1>
-            <Badge variant="outline" className="ml-2">
-              {isLoading ? <Skeleton className="h-4 w-16" /> : `${roomState.users.length} viewers`}
+            <Badge variant="outline" className="ml-2 text-xs">
+              {isLoading ? (
+                <Skeleton className="h-4 w-16" />
+              ) : (
+                <>
+                  <Users className="h-3 w-3 mr-1 inline" />
+                  {roomState.users.length} {roomState.users.length === 1 ? "viewer" : "viewers"}
+                </>
+              )}
             </Badge>
           </div>
 
           <div className="flex items-center gap-2">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button size="sm" variant="outline">
-                  <Share className="h-4 w-4 mr-2" />
-                  Share
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuLabel>Share this room</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleShareRoom}>
-                  <Link className="h-4 w-4 mr-2" />
-                  Copy Room Link
-                  {copySuccess && <Badge className="ml-2 bg-green-500">Copied!</Badge>}
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={() =>
-                    window.open(
-                      `https://twitter.com/intent/tweet?text=Join%20my%20YouTube%20room:%20${roomState.roomName}&url=${encodeURIComponent(window.location.href)}`,
-                      "_blank",
-                    )
-                  }
-                >
-                  <ExternalLink className="h-4 w-4 mr-2" />
-                  Share on Twitter
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <Button size="sm" variant="outline" onClick={handleShareRoom} className="h-8">
+              <Share className="h-4 w-4 mr-2" />
+              <span className="hidden sm:inline-block">Share</span>
+              {copySuccess && <Badge className="ml-2 bg-green-500 h-5 text-[10px]">Copied!</Badge>}
+            </Button>
 
             {isHost && (
-              <Button size="sm" variant="outline">
+              <Button size="sm" variant="outline" className="h-8">
                 <Settings className="h-4 w-4 mr-2" />
-                Room Settings
+                <span className="hidden sm:inline-block">Settings</span>
               </Button>
             )}
           </div>
@@ -535,7 +527,7 @@ export default function RoomClient({ roomId }: { roomId: string }) {
         <div className="flex flex-1 overflow-hidden">
           {/* 비디오 플레이어 섹션 */}
           <div className="flex-1 flex flex-col h-full overflow-hidden">
-            {/* YouTube 플레이어 */}
+            {/* 비디오 플레이어 */}
             <div className="relative bg-black aspect-video">
               {isLoading ? (
                 <div className="absolute inset-0 flex items-center justify-center">
@@ -562,18 +554,20 @@ export default function RoomClient({ roomId }: { roomId: string }) {
                   )}
                 </>
               ) : (
-                <div className="absolute inset-0 flex flex-col items-center justify-center text-white bg-zinc-900">
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-white bg-zinc-900/90 backdrop-blur-sm p-4">
                   <Youtube className="h-16 w-16 mb-4 text-red-600" />
-                  <p className="text-lg mb-2">No video selected</p>
-                  <p className="text-sm text-zinc-400 mb-4">Add a video to the playlist to get started</p>
-                  <AddVideoDialog
-                    showAddVideoDialog={showAddVideoDialog}
-                    setShowAddVideoDialog={setShowAddVideoDialog}
-                    videoUrl={videoUrl}
-                    setVideoUrl={setVideoUrl}
-                    handleAddVideo={handleAddVideo}
-                    isAddingVideo={isAddingVideo}
-                  />
+                  <p className="text-xl font-bold mb-2">재생 중인 영상이 없습니다</p>
+                  <p className="text-sm text-zinc-400 mb-6 text-center max-w-md">
+                    아래 버튼을 클릭하여 YouTube 영상을 추가하고 친구들과 함께 시청해보세요
+                  </p>
+                  <Button 
+                    size="lg" 
+                    className="bg-red-600 hover:bg-red-700 text-white"
+                    onClick={() => setShowAddVideoDialog(true)}
+                  >
+                    <Plus className="h-5 w-5 mr-2" />
+                    YouTube 영상 추가하기
+                  </Button>
                 </div>
               )}
             </div>
@@ -604,31 +598,31 @@ export default function RoomClient({ roomId }: { roomId: string }) {
             {/* 모바일 네비게이션 버튼 */}
             <div className="flex items-center md:hidden p-1 bg-muted/30 border-t">
               <Button
-                variant="ghost"
+                variant={showMobile === "playlist" ? "secondary" : "ghost"}
                 size="sm"
                 onClick={() => setShowMobile(showMobile === "playlist" ? null : "playlist")}
-                className="text-xs flex-1"
+                className="text-xs flex-1 rounded-none h-10"
               >
-                <List className="h-4 w-4 mr-1" />
-                Playlist
+                <List className={`h-4 w-4 ${showMobile === "playlist" ? "text-primary" : ""}`} />
+                <span className="ml-1">Playlist</span>
               </Button>
               <Button
-                variant="ghost"
+                variant={showMobile === "chat" ? "secondary" : "ghost"}
                 size="sm"
                 onClick={() => setShowMobile(showMobile === "chat" ? null : "chat")}
-                className="text-xs flex-1"
+                className="text-xs flex-1 rounded-none h-10"
               >
-                <MessageSquare className="h-4 w-4 mr-1" />
-                Chat
+                <MessageSquare className={`h-4 w-4 ${showMobile === "chat" ? "text-primary" : ""}`} />
+                <span className="ml-1">Chat</span>
               </Button>
               <Button
-                variant="ghost"
+                variant={showMobile === "users" ? "secondary" : "ghost"}
                 size="sm"
                 onClick={() => setShowMobile(showMobile === "users" ? null : "users")}
-                className="text-xs flex-1"
+                className="text-xs flex-1 rounded-none h-10"
               >
-                <Users className="h-4 w-4 mr-1" />
-                Users
+                <Users className={`h-4 w-4 ${showMobile === "users" ? "text-primary" : ""}`} />
+                <span className="ml-1">Users</span>
               </Button>
             </div>
 
@@ -694,6 +688,13 @@ export default function RoomClient({ roomId }: { roomId: string }) {
                     isHost={isHost}
                     handlePlaylistReorder={handlePlaylistReorder}
                     socket={socket}
+                    showAddVideoDialog={showAddVideoDialog}
+                    setShowAddVideoDialog={setShowAddVideoDialog}
+                    videoUrl={videoUrl}
+                    setVideoUrl={setVideoUrl}
+                    handleAddVideo={handleAddVideo}
+                    isAddingVideo={isAddingVideo}
+                    isPlaying={roomState.isPlaying}
                   />
                 ) : (
                   <UsersPanel 
@@ -735,6 +736,13 @@ export default function RoomClient({ roomId }: { roomId: string }) {
                     isHost={isHost}
                     handlePlaylistReorder={handlePlaylistReorder}
                     socket={socket}
+                    showAddVideoDialog={showAddVideoDialog}
+                    setShowAddVideoDialog={setShowAddVideoDialog}
+                    videoUrl={videoUrl}
+                    setVideoUrl={setVideoUrl}
+                    handleAddVideo={handleAddVideo}
+                    isAddingVideo={isAddingVideo}
+                    isPlaying={roomState.isPlaying}
                   />
                 </TabsContent>
 

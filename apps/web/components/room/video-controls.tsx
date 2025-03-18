@@ -77,37 +77,58 @@ export function VideoControls({
   handleAddVideo,
   isAddingVideo,
 }: VideoControlsProps) {
+  // 비디오 진행 바 클릭 시간 이동 핸들러
+  const handleProgressBarClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!currentVideo || isLoading || !playerRef.current) return;
+    
+    const progressBar = e.currentTarget;
+    const rect = progressBar.getBoundingClientRect();
+    const clickPosition = (e.clientX - rect.left) / rect.width;
+    const seekTime = videoDuration * clickPosition;
+    
+    if (playerRef.current && typeof playerRef.current.seekTo === 'function') {
+      playerRef.current.seekTo(seekTime);
+    }
+  };
+  
   return (
     <>
       {/* 비디오 진행률 표시 */}
       {currentVideo && (
-        <div className="h-1 bg-muted w-full">
-          <Progress value={videoProgress} className="h-1" />
+        <div 
+          className="h-2 bg-muted w-full cursor-pointer relative group transition-all hover:h-3"
+          onClick={handleProgressBarClick}
+          title={`${formatTime(playerRef.current?.getCurrentTime() || 0)} / ${formatTime(videoDuration)}`}
+        >
+          <Progress value={videoProgress} className="h-full transition-all" />
+          <div className="absolute right-2 top-0 text-xs bg-black/70 text-white px-1 py-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity">
+            {formatTime(playerRef.current?.getCurrentTime() || 0)} / {formatTime(videoDuration)}
+          </div>
         </div>
       )}
 
       {/* 비디오 컨트롤 */}
-      <div className="p-3 bg-muted/50 flex items-center justify-between">
+      <div className="p-3 bg-muted/50 flex items-center justify-between border-b">
         <div className="flex items-center gap-2">
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
-                  variant="ghost"
+                  variant={isPlaying ? "secondary" : "default"}
                   size="icon"
                   onClick={handlePlayPause}
                   disabled={!currentVideo || isLoading}
-                  className="h-9 w-9"
+                  className="h-9 w-9 rounded-full"
                 >
                   {isPlaying ? (
                     <Pause className="h-4 w-4" />
                   ) : (
-                    <Play className="h-4 w-4" />
+                    <Play className="h-4 w-4 ml-0.5" />
                   )}
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                <p>{isPlaying ? "Pause" : "Play"}</p>
+                <p>{isPlaying ? "일시정지" : "재생"}</p>
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
@@ -120,13 +141,13 @@ export function VideoControls({
                   size="icon"
                   onClick={() => handleNextVideo()}
                   disabled={!currentVideo || isLoading || !hasNextVideo}
-                  className="h-9 w-9"
+                  className="h-9 w-9 rounded-full"
                 >
                   <SkipForward className="h-4 w-4" />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                <p>Next video</p>
+                <p>다음 비디오</p>
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
@@ -135,11 +156,11 @@ export function VideoControls({
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
-                  variant="ghost"
+                  variant={isMuted ? "secondary" : "ghost"}
                   size="icon"
                   onClick={() => setIsMuted(!isMuted)}
                   disabled={!currentVideo || isLoading}
-                  className="h-9 w-9"
+                  className="h-9 w-9 rounded-full"
                 >
                   {isMuted ? (
                     <VolumeX className="h-4 w-4" />
@@ -149,7 +170,7 @@ export function VideoControls({
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                <p>{isMuted ? "Unmute" : "Mute"}</p>
+                <p>{isMuted ? "음소거 해제" : "음소거"}</p>
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
@@ -158,17 +179,13 @@ export function VideoControls({
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
-                  variant="ghost"
+                  variant={autoplay ? "secondary" : "ghost"}
                   size="icon"
                   onClick={handleToggleAutoplay}
                   disabled={!currentVideo || isLoading}
-                  className="h-9 w-9"
+                  className="h-9 w-9 rounded-full"
                 >
-                  {autoplay ? (
-                    <Repeat className="h-4 w-4 text-primary" />
-                  ) : (
-                    <Repeat className="h-4 w-4" />
-                  )}
+                  <Repeat className={`h-4 w-4 ${autoplay ? "text-primary-foreground" : ""}`} />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
@@ -178,8 +195,9 @@ export function VideoControls({
           </TooltipProvider>
 
           {currentVideo && (
-            <div className="text-sm text-muted-foreground ml-2 hidden sm:block">
-              {formatTime(playerRef.current?.getCurrentTime() || 0)} / {formatTime(videoDuration)}
+            <div className="text-sm ml-2 hidden sm:block">
+              <span className="font-medium">{formatTime(playerRef.current?.getCurrentTime() || 0)}</span>
+              <span className="text-muted-foreground"> / {formatTime(videoDuration)}</span>
             </div>
           )}
         </div>
@@ -187,7 +205,7 @@ export function VideoControls({
         <div className="hidden md:flex items-center gap-3">
           {currentVideo ? (
             <div className="flex items-center">
-              <div className="relative w-8 h-8 rounded overflow-hidden mr-2">
+              <div className="relative w-8 h-8 rounded overflow-hidden mr-2 border">
                 <img
                   src={currentVideo.thumbnailUrl || "/placeholder.svg"}
                   alt={currentVideo.title}
@@ -199,7 +217,7 @@ export function VideoControls({
               </p>
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground">No video playing</p>
+            <p className="text-sm text-muted-foreground">재생 중인 비디오 없음</p>
           )}
 
           <AddVideoDialog 
@@ -209,6 +227,8 @@ export function VideoControls({
             setVideoUrl={setVideoUrl}
             handleAddVideo={handleAddVideo}
             isAddingVideo={isAddingVideo}
+            triggerButtonClassName="bg-primary text-primary-foreground hover:bg-primary/90"
+            triggerButtonText="비디오 추가"
           />
         </div>
       </div>

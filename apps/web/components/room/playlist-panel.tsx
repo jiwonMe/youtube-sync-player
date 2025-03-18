@@ -12,9 +12,13 @@ import {
   Trash2, 
   GripVertical, 
   ArrowUp, 
-  ArrowDown 
+  ArrowDown, 
+  Play,
+  Pause,
+  Music2
 } from "lucide-react"
 import { VideoItem } from "@/types/room"
+import { AddVideoDialog } from "./add-video-dialog"
 
 /**
  * 플레이리스트 패널 컴포넌트 Props
@@ -36,6 +40,20 @@ interface PlaylistPanelProps {
   handlePlaylistReorder?: (result: DropResult) => void
   /** 소켓 객체 */
   socket?: Socket | null
+  /** 비디오 추가 대화상자 표시 여부 */
+  showAddVideoDialog?: boolean
+  /** 비디오 추가 대화상자 표시 여부 설정 함수 */
+  setShowAddVideoDialog?: (value: boolean) => void
+  /** 비디오 URL */
+  videoUrl?: string
+  /** 비디오 URL 설정 함수 */
+  setVideoUrl?: (value: string) => void
+  /** 비디오 추가 핸들러 */
+  handleAddVideo?: () => Promise<void>
+  /** 비디오 추가 중 상태 */
+  isAddingVideo?: boolean
+  /** 비디오 재생 중 여부 */
+  isPlaying?: boolean
 }
 
 /**
@@ -50,22 +68,49 @@ export function PlaylistPanel({
   isHost,
   handlePlaylistReorder,
   socket,
+  showAddVideoDialog,
+  setShowAddVideoDialog,
+  videoUrl,
+  setVideoUrl,
+  handleAddVideo,
+  isAddingVideo,
+  isPlaying,
 }: PlaylistPanelProps) {
+  // 비디오 ID로부터 색상 생성
+  const generateColorFromId = (id: string): string => {
+    const hash = id.split('').reduce((acc, char) => (acc * 31) + char.charCodeAt(0), 0);
+    const hue = hash % 360;
+    return `hsl(${hue}, 70%, 50%)`;
+  };
+
   return (
     <div className="flex flex-col w-full h-full overflow-hidden">
       <ScrollArea className="flex-1 overflow-auto">
         <div className="sticky top-0 z-10 p-2 bg-background/80 backdrop-blur-sm border-b flex items-center justify-between">
           <span className="text-sm font-medium flex items-center">
             <List className="h-4 w-4 mr-2 text-muted-foreground" />
-            {playlist.length} {playlist.length === 1 ? "video" : "videos"} in playlist
+            {playlist.length} {playlist.length === 1 ? "영상" : "영상"}
           </span>
+          
+          {setShowAddVideoDialog && (
+            <AddVideoDialog
+              showAddVideoDialog={showAddVideoDialog || false}
+              setShowAddVideoDialog={setShowAddVideoDialog}
+              videoUrl={videoUrl || ""}
+              setVideoUrl={setVideoUrl || (() => {})}
+              handleAddVideo={handleAddVideo || (async () => {})}
+              isAddingVideo={isAddingVideo || false}
+              triggerButtonText="영상 추가"
+              triggerButtonClassName="h-7 text-xs"
+            />
+          )}
         </div>
         
         {isLoading ? (
           Array(3)
             .fill(0)
             .map((_, i) => (
-              <div key={`skeleton-${i}`} className="flex p-3 border-b gap-2">
+              <div key={`skeleton-${i}`} className="flex p-3 border-b gap-2 animate-pulse">
                 <Skeleton className="h-20 w-28 rounded-md" />
                 <div className="flex-1">
                   <Skeleton className="h-4 w-full mb-2" />
@@ -80,6 +125,7 @@ export function PlaylistPanel({
                 <div
                   ref={provided.innerRef}
                   {...provided.droppableProps}
+                  className="space-y-1 p-1"
                 >
                   {playlist.map((video, index) => (
                     <Draggable 
@@ -93,10 +139,10 @@ export function PlaylistPanel({
                           ref={provided.innerRef}
                           {...provided.draggableProps}
                           id={`playlist-item-${video.id}`}
-                          className={`flex p-3 border-b cursor-pointer transition-colors group ${
+                          className={`flex p-3 cursor-pointer transition-all group ${
                             currentVideo?.id === video.id 
-                              ? "bg-muted/80 border-l-4 border-l-primary" 
-                              : "hover:bg-muted/40 border-l-4 border-l-transparent"
+                              ? "bg-primary/10 border-l-[3px] border-l-primary shadow-sm" 
+                              : "hover:bg-muted/40 border-l-[3px] border-l-transparent"
                           } ${snapshot.isDragging ? "bg-muted/60 shadow-lg" : ""}`}
                           onClick={() => handleVideoSelect(video)}
                         >
@@ -109,14 +155,31 @@ export function PlaylistPanel({
                             {currentVideo?.id === video.id && (
                               <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
                                 <Badge variant="secondary" className="bg-primary text-primary-foreground">
-                                  Now Playing
+                                  {isPlaying ? "재생 중" : "일시정지"}
                                 </Badge>
                               </div>
                             )}
+                            <div 
+                              className="absolute top-0 right-0 w-1 h-full opacity-60"
+                              style={{ 
+                                backgroundColor: generateColorFromId(video.id)
+                              }}
+                            />
                           </div>
                           <div className="ml-3 flex-1 min-w-0 flex flex-col justify-between">
-                            <div className="flex justify-between items-start">
-                              <h4 className="font-medium text-sm line-clamp-2 pr-2">{video.title}</h4>
+                            <div className="flex justify-between items-start gap-1">
+                              <h4 className="font-medium text-sm line-clamp-2 pr-2">
+                                {currentVideo?.id === video.id && (
+                                  <span className="mr-1.5 inline-flex">
+                                    {isPlaying ? (
+                                      <Pause className="h-3.5 w-3.5 text-primary" />
+                                    ) : (
+                                      <Play className="h-3.5 w-3.5 text-primary" />
+                                    )}
+                                  </span>
+                                )}
+                                {video.title}
+                              </h4>
                               <div className="flex items-center">
                                 {isHost && handlePlaylistReorder && (
                                   <div 
@@ -218,9 +281,19 @@ export function PlaylistPanel({
         ) : (
           <div className="flex items-center justify-center h-[calc(100%-40px)] text-muted-foreground p-4">
             <div className="text-center">
-              <List className="h-8 w-8 mx-auto mb-2 opacity-50" />
-              <p>No videos in playlist</p>
-              <p className="text-xs mt-1">Add videos to get started</p>
+              <Music2 className="h-12 w-12 mx-auto mb-3 opacity-20" />
+              <p className="font-medium mb-1">플레이리스트가 비어있습니다</p>
+              <p className="text-xs mb-4">영상을 추가하고 함께 시청해보세요</p>
+              
+              {setShowAddVideoDialog && (
+                <Button 
+                  onClick={() => setShowAddVideoDialog(true)}
+                  variant="outline"
+                  className="mt-2"
+                >
+                  영상 추가하기
+                </Button>
+              )}
             </div>
           </div>
         )}

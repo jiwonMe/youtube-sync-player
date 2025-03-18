@@ -11,11 +11,11 @@ import {
   GripVertical,
   ArrowUp,
   ArrowDown,
-  Plus
+  Plus,
+  Music2
 } from "lucide-react"
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
 import { VideoItem } from "@/types/room"
+import { AddVideoDialog } from "./add-video-dialog"
 
 /**
  * 대기열 플레이리스트 컴포넌트 Props
@@ -70,6 +70,13 @@ export function UpcomingPlaylist({
   // 다음 재생 예정 비디오 목록 (현재 재생 중인 비디오 제외)
   const upcomingVideos = playlist.filter(video => video.id !== currentVideo?.id);
   
+  // 비디오 ID로부터 색상 생성
+  const generateColorFromId = (id: string): string => {
+    const hash = id.split('').reduce((acc, char) => (acc * 31) + char.charCodeAt(0), 0);
+    const hue = hash % 360;
+    return `hsl(${hue}, 70%, 50%)`;
+  };
+  
   // 재생 예정 비디오가 없는 경우 렌더링하지 않음
   if (upcomingVideos.length === 0) {
     return null;
@@ -80,40 +87,18 @@ export function UpcomingPlaylist({
       <div className="p-2 bg-muted/30 flex items-center justify-between sticky top-0 z-10">
         <span className="text-sm font-medium flex items-center">
           <List className="h-4 w-4 mr-2 text-muted-foreground" />
-          다음 재생 예정
+          다음 재생 예정 ({upcomingVideos.length})
         </span>
-        <Dialog open={showAddVideoDialog} onOpenChange={setShowAddVideoDialog}>
-          <DialogTrigger asChild>
-            <Button size="sm" variant="outline" className="h-7">
-              <Plus className="h-3 w-3 mr-1" />
-              <span className="hidden sm:inline-block">Add Video</span>
-              <span className="sm:hidden">Add</span>
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Add YouTube Video</DialogTitle>
-              <DialogDescription>Enter a YouTube video URL to add it to the playlist.</DialogDescription>
-            </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="flex items-center gap-2">
-                <Input
-                  placeholder="https://www.youtube.com/watch?v=..."
-                  value={videoUrl}
-                  onChange={(e) => setVideoUrl(e.target.value)}
-                />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setShowAddVideoDialog(false)}>
-                Cancel
-              </Button>
-              <Button onClick={handleAddVideo} disabled={isAddingVideo || !videoUrl.trim()}>
-                {isAddingVideo ? "Adding..." : "Add Video"}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        <AddVideoDialog
+          showAddVideoDialog={showAddVideoDialog}
+          setShowAddVideoDialog={setShowAddVideoDialog}
+          videoUrl={videoUrl}
+          setVideoUrl={setVideoUrl}
+          handleAddVideo={handleAddVideo}
+          isAddingVideo={isAddingVideo}
+          triggerButtonText="추가"
+          triggerButtonClassName="h-7 text-xs"
+        />
       </div>
       <ScrollArea className="max-h-[160px] md:max-h-[160px] sm:max-h-[140px]">
         <DragDropContext onDragEnd={handlePlaylistReorder}>
@@ -137,12 +122,12 @@ export function UpcomingPlaylist({
                         <div
                           ref={provided.innerRef}
                           {...provided.draggableProps}
-                          className={`flex-shrink-0 w-[160px] sm:w-[180px] md:w-[200px] cursor-pointer hover:bg-muted/40 rounded-md transition-colors p-2 group ${
+                          className={`flex-shrink-0 w-[160px] sm:w-[180px] md:w-[200px] cursor-pointer hover:bg-muted/40 rounded-md transition-colors p-2 group relative ${
                             snapshot.isDragging ? "bg-muted/60 shadow-lg" : ""
                           }`}
                           onClick={() => handleVideoSelect(video)}
                         >
-                          <div className="relative w-full aspect-video rounded-md overflow-hidden mb-2">
+                          <div className="relative w-full aspect-video rounded-md overflow-hidden mb-2 border border-border">
                             <img
                               src={video.thumbnailUrl || "/placeholder.svg"}
                               alt={video.title}
@@ -160,99 +145,110 @@ export function UpcomingPlaylist({
                                 <GripVertical className="h-3 w-3" />
                               </div>
                             )}
+                            <div 
+                              className="absolute top-0 right-0 w-1 h-full opacity-60"
+                              style={{ 
+                                backgroundColor: generateColorFromId(video.id)
+                              }}
+                            />
                           </div>
-                          <div className="flex justify-between items-start">
-                            <h4 className="font-medium text-sm line-clamp-2 pr-2">{video.title}</h4>
-                            <div className="flex items-center">
-                              {isHost && (
-                                <div className="flex opacity-0 group-hover:opacity-100 transition-opacity mr-1">
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-5 w-5 hover:bg-muted"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      // 현재 플레이리스트에서 이 비디오의 실제 인덱스를 찾습니다
-                                      const actualIndex = playlist.findIndex(v => v.id === video.id);
-                                      if (actualIndex > 0) {
-                                        const newPlaylist = [...playlist];
-                                        [newPlaylist[actualIndex], newPlaylist[actualIndex - 1]] = 
-                                          [newPlaylist[actualIndex - 1], newPlaylist[actualIndex]];
-                                        
-                                        // 서버에 변경사항 전송
-                                        if (socket) {
-                                          socket.emit("playlist:reorder", newPlaylist);
-                                        }
-                                        
-                                        // 로컬 상태 업데이트
-                                        handlePlaylistReorder({
-                                          source: { index: actualIndex, droppableId: 'upcoming-playlist' },
-                                          destination: { index: actualIndex - 1, droppableId: 'upcoming-playlist' },
-                                          draggableId: `upcoming-${video.id}`,
-                                          type: 'DEFAULT',
-                                          mode: 'FLUID',
-                                          reason: 'DROP',
-                                          combine: null
-                                        });
-                                      }
-                                    }}
-                                    disabled={playlist.findIndex(v => v.id === video.id) === 0}
-                                  >
-                                    <ArrowUp className="h-3 w-3 text-muted-foreground" />
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="h-5 w-5 hover:bg-muted"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      // 현재 플레이리스트에서 이 비디오의 실제 인덱스를 찾습니다
-                                      const actualIndex = playlist.findIndex(v => v.id === video.id);
-                                      if (actualIndex < playlist.length - 1) {
-                                        const newPlaylist = [...playlist];
-                                        [newPlaylist[actualIndex], newPlaylist[actualIndex + 1]] = 
-                                          [newPlaylist[actualIndex + 1], newPlaylist[actualIndex]];
-                                        
-                                        // 서버에 변경사항 전송
-                                        if (socket) {
-                                          socket.emit("playlist:reorder", newPlaylist);
-                                        }
-                                        
-                                        // 로컬 상태 업데이트
-                                        handlePlaylistReorder({
-                                          source: { index: actualIndex, droppableId: 'upcoming-playlist' },
-                                          destination: { index: actualIndex + 1, droppableId: 'upcoming-playlist' },
-                                          draggableId: `upcoming-${video.id}`,
-                                          type: 'DEFAULT',
-                                          mode: 'FLUID',
-                                          reason: 'DROP',
-                                          combine: null
-                                        });
-                                      }
-                                    }}
-                                    disabled={playlist.findIndex(v => v.id === video.id) === playlist.length - 1}
-                                  >
-                                    <ArrowDown className="h-3 w-3 text-muted-foreground" />
-                                  </Button>
-                                </div>
-                              )}
-                              {isHost && (
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-destructive/10"
-                                  onClick={(e) => handleRemoveVideo(video.id, e)}
-                                >
-                                  <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
-                                </Button>
-                              )}
+                          <h4 className="font-medium text-sm line-clamp-2 pr-2">{video.title}</h4>
+                          
+                          {/* 컨트롤 버튼 */}
+                          {isHost && (
+                            <div className="absolute right-2 bottom-2 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 bg-background/80 backdrop-blur-sm p-1 rounded">
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6 hover:bg-muted"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  // 현재 플레이리스트에서 이 비디오의 실제 인덱스를 찾습니다
+                                  const actualIndex = playlist.findIndex(v => v.id === video.id);
+                                  if (actualIndex > 0) {
+                                    const newPlaylist = [...playlist];
+                                    [newPlaylist[actualIndex], newPlaylist[actualIndex - 1]] = 
+                                      [newPlaylist[actualIndex - 1], newPlaylist[actualIndex]];
+                                    
+                                    // 서버에 변경사항 전송
+                                    if (socket) {
+                                      socket.emit("playlist:reorder", newPlaylist);
+                                    }
+                                    
+                                    // 로컬 상태 업데이트
+                                    handlePlaylistReorder({
+                                      source: { index: actualIndex, droppableId: 'upcoming-playlist' },
+                                      destination: { index: actualIndex - 1, droppableId: 'upcoming-playlist' },
+                                      draggableId: `upcoming-${video.id}`,
+                                      type: 'DEFAULT',
+                                      mode: 'FLUID',
+                                      reason: 'DROP',
+                                      combine: null
+                                    });
+                                  }
+                                }}
+                                disabled={playlist.findIndex(v => v.id === video.id) === 0}
+                              >
+                                <ArrowUp className="h-3 w-3 text-muted-foreground" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6 hover:bg-muted"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  // 현재 플레이리스트에서 이 비디오의 실제 인덱스를 찾습니다
+                                  const actualIndex = playlist.findIndex(v => v.id === video.id);
+                                  if (actualIndex < playlist.length - 1) {
+                                    const newPlaylist = [...playlist];
+                                    [newPlaylist[actualIndex], newPlaylist[actualIndex + 1]] = 
+                                      [newPlaylist[actualIndex + 1], newPlaylist[actualIndex]];
+                                    
+                                    // 서버에 변경사항 전송
+                                    if (socket) {
+                                      socket.emit("playlist:reorder", newPlaylist);
+                                    }
+                                    
+                                    // 로컬 상태 업데이트
+                                    handlePlaylistReorder({
+                                      source: { index: actualIndex, droppableId: 'upcoming-playlist' },
+                                      destination: { index: actualIndex + 1, droppableId: 'upcoming-playlist' },
+                                      draggableId: `upcoming-${video.id}`,
+                                      type: 'DEFAULT',
+                                      mode: 'FLUID',
+                                      reason: 'DROP',
+                                      combine: null
+                                    });
+                                  }
+                                }}
+                                disabled={playlist.findIndex(v => v.id === video.id) === playlist.length - 1}
+                              >
+                                <ArrowDown className="h-3 w-3 text-muted-foreground" />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-6 w-6 hover:bg-destructive/10"
+                                onClick={(e) => handleRemoveVideo(video.id, e)}
+                              >
+                                <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
+                              </Button>
                             </div>
-                          </div>
+                          )}
                         </div>
                       )}
                     </Draggable>
                   ))}
                 {provided.placeholder}
+                
+                {upcomingVideos.length === 0 && (
+                  <div className="flex items-center justify-center w-full h-24 text-muted-foreground">
+                    <div className="text-center">
+                      <Music2 className="h-6 w-6 mx-auto mb-2 opacity-30" />
+                      <p className="text-xs">다음 재생 예정 영상이 없습니다</p>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </Droppable>
