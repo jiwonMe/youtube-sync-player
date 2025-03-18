@@ -8,5 +8,7 @@
         "rootDir": "apps/web"
       }
     }
-  ]
+  ],
+  "buildCommand": "pnpm --filter=web run build",
+  "installCommand": "pnpm install"
 }
