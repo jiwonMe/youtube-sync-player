@@ -2,12 +2,20 @@ import { Suspense } from "react"
 import { Skeleton } from "@/components/ui/skeleton"
 import RoomClient from "@/components/room-client"
 
+/**
+ * Room 페이지 props 타입 정의
+ */
 interface RoomPageProps {
-  params: Promise<{ roomId: string }>
+  params: { roomId: string }
 }
 
-export default async function RoomPage({ params }: RoomPageProps) {
-  const { roomId } = await params
+/**
+ * 특정 룸 ID를 위한 동적 페이지
+ * 
+ * @param params - URL에서 추출된 roomId 매개변수
+ */
+export default function RoomPage({ params }: RoomPageProps) {
+  const { roomId } = params
   
   return (
     <Suspense fallback={<RoomSkeleton />}>
