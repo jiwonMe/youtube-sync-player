@@ -1,5 +1,18 @@
 import { NextResponse } from 'next/server';
-import { v4 as uuidv4 } from 'uuid';
+
+/**
+ * 5자리 영어 대문자로 구성된 랜덤 방 코드 생성
+ * 
+ * @returns 5자리 영어 대문자 코드
+ */
+function generateRoomCode(): string {
+  const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  let result = '';
+  for (let i = 0; i < 5; i++) {
+    result += characters.charAt(Math.floor(Math.random() * characters.length));
+  }
+  return result;
+}
 
 /**
  * 방 목록을 가져오는 GET 메서드
@@ -35,8 +48,8 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     
-    // 방 ID 생성
-    const roomId = uuidv4();
+    // 방 코드 생성 (5자리 영어 대문자)
+    const roomId = generateRoomCode();
 
     // 소켓 서버에 방 생성 요청
     const socketServerUrl = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001';
@@ -68,4 +81,4 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
-} 
+}

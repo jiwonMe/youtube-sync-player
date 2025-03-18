@@ -268,14 +268,22 @@ function JoinRoomSection() {
                       <FormLabel>{joinType === "id" ? "Room ID" : "Room Name"}</FormLabel>
                       <FormControl>
                         <Input 
-                          placeholder={joinType === "id" ? "Enter room ID" : "Enter room name"} 
+                          placeholder={joinType === "id" ? "Enter 5-letter room code (e.g. ABCDE)" : "Enter room name"} 
                           {...field} 
                           className="border-border/50 focus:border-red-500/50"
+                          style={joinType === "id" ? { textTransform: "uppercase" } : {}}
+                          onChange={(e) => {
+                            // ID 모드에서는 입력값을 대문자로 변환
+                            if (joinType === "id") {
+                              e.target.value = e.target.value.toUpperCase();
+                            }
+                            field.onChange(e);
+                          }}
                         />
                       </FormControl>
                       <FormDescription>
                         {joinType === "id" 
-                          ? "This is the unique identifier for the room you want to join." 
+                          ? "Room codes are 5 uppercase letters (e.g. ABCDE)." 
                           : "Enter the name of the room you want to join."}
                       </FormDescription>
                       <FormMessage />
@@ -366,4 +374,3 @@ export default function JoinRoomPage() {
     </div>
   )
 }
-
