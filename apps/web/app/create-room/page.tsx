@@ -8,6 +8,7 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
 import * as z from "zod"
 import { Music, Lock, Users, ArrowLeft, Youtube, PlusCircle } from "lucide-react"
+import { useToast } from "@/components/ui/use-toast"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
@@ -74,6 +75,7 @@ function CreateRoomSection() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { user, isSignedIn } = useUser()
+  const { toast } = useToast()
   const [isPasswordProtected, setIsPasswordProtected] = useState(false)
   const [selectedPlaylist, setSelectedPlaylist] = useState<Playlist | null>(null)
   const [isMounted, setIsMounted] = useState(false)
@@ -114,6 +116,24 @@ function CreateRoomSection() {
       thumbnailUrl: video.thumbnailUrl
     })));
     try {
+      // 방 이름 중복 체크
+      const checkResponse = await fetch(`${process.env.NEXT_PUBLIC_SOCKET_URL}/rooms/check-name?name=${encodeURIComponent(values.roomName)}`);
+      
+      if (!checkResponse.ok) {
+        throw new Error('Failed to check room name');
+      }
+      
+      const checkData = await checkResponse.json();
+      
+      if (checkData.isTaken) {
+        toast({
+          title: "Room name already taken",
+          description: "Please choose a different room name.",
+          variant: "destructive",
+        });
+        return;
+      }
+
       // API 호출을 통해 방 생성
       const response = await fetch('/api/rooms', {
         method: 'POST',

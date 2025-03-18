@@ -25,6 +25,22 @@ dotenv.config()
 
 // In-memory store for rooms
 const rooms = new Map<string, RoomState>()
+// Map to find rooms by name (lowercase for case-insensitive lookup)
+const roomsByName = new Map<string, string>() // Maps roomName (lowercase) to roomId
+
+// Helper function to find a room by name (case-insensitive)
+function findRoomByName(name: string): RoomState | null {
+  const roomId = roomsByName.get(name.toLowerCase())
+  if (roomId) {
+    return rooms.get(roomId) || null
+  }
+  return null
+}
+
+// Helper function to check if a room name is already taken
+function isRoomNameTaken(name: string): boolean {
+  return roomsByName.has(name.toLowerCase())
+}
 
 // Create HTTP server
 const httpServer = createServer((req, res) => {
@@ -33,6 +49,63 @@ const httpServer = createServer((req, res) => {
   if (parsedUrl.pathname === "/health") {
     res.writeHead(200)
     res.end("Healthy")
+    return
+  }
+
+  // CORS headers for all responses
+  res.setHeader('Access-Control-Allow-Origin', process.env.CORS_ORIGIN || '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  // Handle OPTIONS requests for CORS preflight
+  if (req.method === 'OPTIONS') {
+    res.writeHead(200);
+    res.end();
+    return;
+  }
+
+  // 방 이름으로 룸 검색 엔드포인트
+  if (parsedUrl.pathname === "/rooms/by-name" && req.method === "GET") {
+    const roomName = parsedUrl.query.name as string
+    
+    if (!roomName) {
+      res.writeHead(400, { "Content-Type": "application/json" })
+      res.end(JSON.stringify({ error: "Room name is required" }))
+      return
+    }
+
+    const room = findRoomByName(roomName)
+    
+    if (room) {
+      res.writeHead(200, { "Content-Type": "application/json" })
+      res.end(JSON.stringify({ 
+        exists: true, 
+        roomId: room.roomId,
+        isPasswordProtected: room.isPasswordProtected 
+      }))
+    } else {
+      res.writeHead(404, { "Content-Type": "application/json" })
+      res.end(JSON.stringify({ exists: false }))
+    }
+    return
+  }
+
+  // 방 이름 중복 체크 엔드포인트
+  if (parsedUrl.pathname === "/rooms/check-name" && req.method === "GET") {
+    const roomName = parsedUrl.query.name as string
+    
+    if (!roomName) {
+      res.writeHead(400, { "Content-Type": "application/json" })
+      res.end(JSON.stringify({ error: "Room name is required" }))
+      return
+    }
+
+    const isTaken = isRoomNameTaken(roomName)
+    
+    res.writeHead(200, { "Content-Type": "application/json" })
+    res.end(JSON.stringify({ 
+      isTaken: isTaken 
+    }))
     return
   }
 
@@ -46,6 +119,13 @@ const httpServer = createServer((req, res) => {
       try {
         const roomData = JSON.parse(body);
         const { roomId, roomName, description, isPasswordProtected, password, createdBy, playlist } = roomData;
+
+        // 이름 중복 체크
+        if (isRoomNameTaken(roomName)) {
+          res.writeHead(409, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Room name already exists" }));
+          return;
+        }
 
         // 새로운 방 생성
         rooms.set(roomId, {
@@ -68,8 +148,11 @@ const httpServer = createServer((req, res) => {
           autoplay: true,
         });
 
+        // 이름으로도 방을 찾을 수 있도록 매핑 추가
+        roomsByName.set(roomName.toLowerCase(), roomId);
+
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ success: true }));
+        res.end(JSON.stringify({ success: true, roomId }));
       } catch (error) {
         console.error("Error creating room:", error);
         res.writeHead(500, { "Content-Type": "application/json" });
@@ -277,6 +360,28 @@ io.on("connection", (socket) => {
   socket.on("room:update", (settings: Partial<RoomState>) => {
     // Only allow host to update room settings
     if (userId === room.hostId) {
+      // 만약 룸 이름이 변경되었다면, 매핑도 업데이트
+      if (settings.roomName && settings.roomName !== room.roomName) {
+        // 새 이름이 이미 사용중인지 확인
+        if (isRoomNameTaken(settings.roomName)) {
+          // 같은 방의 이름 변경인 경우는 허용 (대소문자만 변경 등)
+          const existingRoom = findRoomByName(settings.roomName)
+          if (existingRoom && existingRoom.roomId !== roomId) {
+            // 다른 방이 이미 해당 이름을 사용 중이므로 이름 변경 거부
+            socket.emit("room:update:error", {
+              message: "Room name already taken"
+            })
+            return
+          }
+        }
+        
+        // 기존 이름 매핑 제거
+        roomsByName.delete(room.roomName.toLowerCase())
+        
+        // 새 이름 매핑 추가
+        roomsByName.set(settings.roomName.toLowerCase(), roomId)
+      }
+      
       // Update room settings
       Object.assign(room, settings)
 
@@ -299,8 +404,10 @@ io.on("connection", (socket) => {
           // Check again if room is still empty
           const currentRoom = rooms.get(roomId)
           if (currentRoom && currentRoom.users.length === 0) {
+            // 방 이름 매핑도 함께 제거
+            roomsByName.delete(currentRoom.roomName.toLowerCase())
             rooms.delete(roomId)
-            console.log(`Room ${roomId} removed due to inactivity`)
+            console.log(`Room ${roomId} (${currentRoom.roomName}) removed due to inactivity`)
           }
         }, 60000) // 1 minute delay
       } else if (userId === room.hostId) {

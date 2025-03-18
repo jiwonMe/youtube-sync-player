@@ -22,8 +22,9 @@ import { Wave } from "@/components/ui/wave"
  * 폼 유효성 검사를 위한 스키마
  */
 const formSchema = z.object({
-  roomId: z.string().min(1, {
-    message: "Room ID is required.",
+  joinType: z.enum(["id", "name"]).default("id"),
+  roomIdentifier: z.string().min(1, {
+    message: "Room ID or name is required.",
   }),
   password: z.string().optional(),
 })
@@ -38,6 +39,8 @@ function JoinRoomSection() {
   const [isPasswordRequired, setIsPasswordRequired] = useState(false)
   const [isMounted, setIsMounted] = useState(false)
   const [isButtonHovered, setIsButtonHovered] = useState(false)
+  const [isJoining, setIsJoining] = useState(false)
+  const [joinError, setJoinError] = useState<string | null>(null)
 
   // 클라이언트 사이드에서만 마운트 상태 업데이트
   useEffect(() => {
@@ -53,41 +56,56 @@ function JoinRoomSection() {
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      roomId: "",
+      joinType: "id",
+      roomIdentifier: "",
       password: "",
     },
   })
 
+  // Get current join type
+  const joinType = form.watch("joinType")
+
   // Handle form submission
   async function onSubmit(values: z.infer<typeof formSchema>) {
+    setJoinError(null)
+    setIsJoining(true)
+    
     try {
-      // Include user information if logged in
-      const joinData = {
-        ...values,
-        user: isSignedIn
-          ? {
-              id: user.id,
-              name: `${user.firstName} ${user.lastName}`,
-              email: user.primaryEmailAddress?.emailAddress,
-              image: user.imageUrl,
-            }
-          : null,
-      }
+      const { joinType, roomIdentifier, password } = values
 
-      console.log("Join data with user info:", joinData)
-
-      // Mock API call to check if password is required
-      if (!isPasswordRequired) {
-        // If we're showing the password field already, this means the user has entered it
-        // and we can proceed to the room
-        router.push(`/room/${values.roomId}`)
+      if (joinType === "name") {
+        // 방 이름으로 조회
+        const response = await fetch(`${process.env.NEXT_PUBLIC_SOCKET_URL}/rooms/by-name?name=${encodeURIComponent(roomIdentifier)}`)
+        
+        if (!response.ok) {
+          throw new Error("Failed to find room")
+        }
+        
+        const data = await response.json()
+        
+        if (data.exists) {
+          // Room exists, check if password protected
+          if (data.isPasswordProtected && !isPasswordRequired) {
+            setIsPasswordRequired(true)
+            setIsJoining(false)
+            return
+          }
+          
+          // Navigate to the room
+          router.push(`/room/${data.roomId}`)
+        } else {
+          setJoinError("No room with that name exists")
+          setIsJoining(false)
+        }
       } else {
-        // If we haven't shown the password field yet, but the backend says we need one,
-        // show the password field
-        setIsPasswordRequired(true)
+        // 방 ID로 직접 입장
+        router.push(`/room/${roomIdentifier}`)
       }
     } catch (error) {
       console.error("Failed to join room:", error)
+      setJoinError("Error joining room. Please try again.")
+    } finally {
+      setIsJoining(false)
     }
   }
 
@@ -156,7 +174,7 @@ function JoinRoomSection() {
               </Button>
               <CardTitle className="text-2xl">Join a Room</CardTitle>
             </div>
-            <CardDescription>Enter a room ID to join an existing room.</CardDescription>
+            <CardDescription>Enter a room ID or name to join an existing room.</CardDescription>
           </CardHeader>
           <CardContent>
             {isSignedIn ? (
@@ -191,22 +209,85 @@ function JoinRoomSection() {
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
                 <FormField
                   control={form.control}
-                  name="roomId"
+                  name="joinType"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Room ID</FormLabel>
+                      <FormLabel>Join by</FormLabel>
+                      <div className="flex items-center justify-between p-2 rounded-md border border-border/50 bg-background/50">
+                        <div className="flex space-x-4">
+                          <FormLabel
+                            className={cn(
+                              "flex items-center cursor-pointer m-0 p-2 rounded-md transition-colors",
+                              field.value === "id" ? "bg-red-500/20 text-red-500" : "hover:bg-muted"
+                            )}
+                            onClick={() => form.setValue("joinType", "id")}
+                            htmlFor="join-type-id"
+                          >
+                            <input
+                              {...field}
+                              type="radio"
+                              value="id"
+                              id="join-type-id"
+                              className="sr-only"
+                              checked={field.value === "id"}
+                              onChange={() => form.setValue("joinType", "id")}
+                            />
+                            <span>Room ID</span>
+                          </FormLabel>
+                          
+                          <FormLabel
+                            className={cn(
+                              "flex items-center cursor-pointer m-0 p-2 rounded-md transition-colors",
+                              field.value === "name" ? "bg-red-500/20 text-red-500" : "hover:bg-muted"
+                            )}
+                            onClick={() => form.setValue("joinType", "name")}
+                            htmlFor="join-type-name"
+                          >
+                            <input
+                              {...field}
+                              type="radio"
+                              value="name"
+                              id="join-type-name"
+                              className="sr-only"
+                              checked={field.value === "name"}
+                              onChange={() => form.setValue("joinType", "name")}
+                            />
+                            <span>Room Name</span>
+                          </FormLabel>
+                        </div>
+                      </div>
+                    </FormItem>
+                  )}
+                />
+                
+                <FormField
+                  control={form.control}
+                  name="roomIdentifier"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{joinType === "id" ? "Room ID" : "Room Name"}</FormLabel>
                       <FormControl>
                         <Input 
-                          placeholder="Enter room ID" 
+                          placeholder={joinType === "id" ? "Enter room ID" : "Enter room name"} 
                           {...field} 
-                          className="border-border/50 focus:border-primary/50"
+                          className="border-border/50 focus:border-red-500/50"
                         />
                       </FormControl>
-                      <FormDescription>This is the unique identifier for the room you want to join.</FormDescription>
+                      <FormDescription>
+                        {joinType === "id" 
+                          ? "This is the unique identifier for the room you want to join." 
+                          : "Enter the name of the room you want to join."}
+                      </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
+
+                {joinError && (
+                  <Alert className="bg-red-500/10 border-red-500/20 text-red-500">
+                    <AlertDescription>{joinError}</AlertDescription>
+                  </Alert>
+                )}
 
                 {isPasswordRequired && (
                   <FormField
@@ -220,7 +301,7 @@ function JoinRoomSection() {
                             type="password" 
                             placeholder="Enter room password" 
                             {...field} 
-                            className="border-border/50 focus:border-primary/50"
+                            className="border-border/50 focus:border-red-500/50"
                           />
                         </FormControl>
                         <FormMessage />
@@ -235,12 +316,16 @@ function JoinRoomSection() {
                     className="w-full gap-2 bg-gradient-to-r from-red-500 to-red-600 shadow-lg shadow-red-500/20 hover:shadow-red-500/30 border-none transition-all duration-300 hover:-translate-y-1 group"
                     onMouseEnter={() => setIsButtonHovered(true)}
                     onMouseLeave={() => setIsButtonHovered(false)}
-                    disabled={form.formState.isSubmitting}
+                    disabled={form.formState.isSubmitting || isJoining}
                   >
-                    <LogIn className={cn(
-                      "h-4 w-4 transition-transform duration-300",
-                      isButtonHovered && "translate-x-1"
-                    )} />
+                    {isJoining ? (
+                      <div className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                    ) : (
+                      <LogIn className={cn(
+                        "h-4 w-4 transition-transform duration-300",
+                        isButtonHovered && "translate-x-1"
+                      )} />
+                    )}
                     <span className="relative inline-block">
                       {isPasswordRequired ? "Enter Room" : "Join Room"}
                       <span className={cn(

@@ -25,6 +25,8 @@ export function HeroSection() {
   const [isScrolled, setIsScrolled] = useState(false)
   const [activeTab, setActiveTab] = useState("create")
   const [isMounted, setIsMounted] = useState(false)
+  const [joinByName, setJoinByName] = useState(false)
+  const [isJoining, setIsJoining] = useState(false)
 
   // 클라이언트 사이드에서만 마운트 상태 업데이트
   useEffect(() => {
@@ -62,18 +64,63 @@ export function HeroSection() {
   }
 
   // Quick room join handler
-  const handleQuickJoinRoom = () => {
-    if (!roomId) {
-      toast({
-        title: "Room ID required",
-        description: "Please enter a room ID to join.",
-        variant: "destructive",
-      })
-      return
-    }
+  const handleQuickJoinRoom = async () => {
+    if (joinByName) {
+      // Join by room name
+      if (!roomId || roomId.length < 3) {
+        toast({
+          title: "Room name required",
+          description: "Room name must be at least 3 characters long.",
+          variant: "destructive",
+        })
+        return
+      }
 
-    // Navigate directly to the room
-    router.push(`/room/${roomId}`)
+      setIsJoining(true)
+      try {
+        // Find room by name
+        const response = await fetch(`${process.env.NEXT_PUBLIC_SOCKET_URL || ''}/rooms/by-name?name=${encodeURIComponent(roomId)}`)
+        
+        if (!response.ok) {
+          throw new Error("Failed to find room")
+        }
+        
+        const data = await response.json()
+        
+        if (data.exists) {
+          // Room exists, navigate to it
+          router.push(`/room/${data.roomId}`)
+        } else {
+          toast({
+            title: "Room not found",
+            description: "No room with that name exists.",
+            variant: "destructive",
+          })
+        }
+      } catch (error) {
+        console.error("Error finding room:", error)
+        toast({
+          title: "Error",
+          description: "There was an error finding the room. Please try again.",
+          variant: "destructive",
+        })
+      } finally {
+        setIsJoining(false)
+      }
+    } else {
+      // Join by room ID
+      if (!roomId) {
+        toast({
+          title: "Room ID required",
+          description: "Please enter a room ID to join.",
+          variant: "destructive",
+        })
+        return
+      }
+
+      // Navigate directly to the room
+      router.push(`/room/${roomId}`)
+    }
   }
 
   // Handle keyboard shortcuts
@@ -357,9 +404,48 @@ export function HeroSection() {
               </TabsContent>
               <TabsContent value="join" className="p-6">
                 <div className="flex flex-col space-y-4">
+                  <div className="flex items-center justify-between mb-2 border-b border-red-500/10 pb-2">
+                    <span className="text-sm font-medium">Join by:</span>
+                    <div className="flex items-center space-x-3">
+                      <div 
+                        className={cn(
+                          "flex items-center cursor-pointer",
+                          !joinByName ? "text-red-500" : "text-muted-foreground"
+                        )}
+                        onClick={() => setJoinByName(false)}
+                      >
+                        <span className="text-sm">Room ID</span>
+                      </div>
+                      <div className="relative w-10 h-5">
+                        <div 
+                          className={cn(
+                            "absolute w-10 h-5 rounded-full cursor-pointer transition-colors duration-300",
+                            joinByName ? "bg-red-500" : "bg-muted"
+                          )}
+                          onClick={() => setJoinByName(!joinByName)}
+                        >
+                          <div 
+                            className={cn(
+                              "absolute w-4 h-4 bg-white rounded-full top-0.5 left-0.5 transition-transform duration-300 shadow-sm",
+                              joinByName ? "translate-x-5" : "translate-x-0"
+                            )}
+                          />
+                        </div>
+                      </div>
+                      <div 
+                        className={cn(
+                          "flex items-center cursor-pointer",
+                          joinByName ? "text-red-500" : "text-muted-foreground"
+                        )}
+                        onClick={() => setJoinByName(true)}
+                      >
+                        <span className="text-sm">Room Name</span>
+                      </div>
+                    </div>
+                  </div>
                   <div className="flex items-center space-x-2">
                     <Input 
-                      placeholder="Enter room ID" 
+                      placeholder={joinByName ? "Enter room name" : "Enter room ID"} 
                       value={roomId}
                       onChange={(e) => setRoomId(e.target.value)}
                       onKeyDown={handleJoinKeyDown}
@@ -368,13 +454,20 @@ export function HeroSection() {
                     <Button 
                       onClick={handleQuickJoinRoom} 
                       size="icon" 
+                      disabled={isJoining}
                       className="shrink-0 bg-gradient-to-r from-red-500 to-red-600 shadow-md shadow-red-500/20 hover:shadow-red-500/30 transition-all duration-300 hover:translate-y-[-2px]"
                     >
-                      <ArrowRight className="h-4 w-4" />
+                      {isJoining ? (
+                        <div className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                      ) : (
+                        <ArrowRight className="h-4 w-4" />
+                      )}
                     </Button>
                   </div>
                   <p className="text-xs text-muted-foreground">
-                    Enter a room ID to join instantly.
+                    {joinByName 
+                      ? "Enter a room name to join instantly." 
+                      : "Enter a room ID to join instantly."}
                   </p>
                   <Button 
                     asChild 
