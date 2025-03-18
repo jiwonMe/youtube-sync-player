@@ -7,7 +7,7 @@ const isPublicRoute = createRouteMatcher([
   "/", 
   "/join-room(.*)/", 
   "/room/(.*)/", 
-  "/api/(.*)", 
+  "/api/((?!youtube/token).+)",  // API routes except youtube/token
   "/sign-in/(.*)", 
   "/sign-in",
   "/sign-up/(.*)",
