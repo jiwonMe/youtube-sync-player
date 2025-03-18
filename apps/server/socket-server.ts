@@ -19,6 +19,7 @@ type RoomState = {
   password?: string // 비밀번호 필드 추가
   createdAt: number
   autoplay: boolean // 자동 재생 설정 추가
+  description?: string // 방 설명 필드 추가
 }
 
 // Load environment variables
@@ -110,6 +111,30 @@ const httpServer = createServer((req, res) => {
     return
   }
 
+  // 방 목록 조회 엔드포인트
+  if (parsedUrl.pathname === "/rooms" && req.method === "GET") {
+    try {
+      // 방 목록 생성
+      const roomsList = Array.from(rooms.values()).map(room => ({
+        roomId: room.roomId,
+        roomName: room.roomName,
+        description: room.description || "",
+        isPasswordProtected: room.isPasswordProtected,
+        createdBy: room.hostId,
+        createdAt: new Date(room.createdAt).toISOString(),
+        userCount: room.users.length
+      }));
+      
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(roomsList));
+    } catch (error) {
+      console.error("Error fetching rooms:", error);
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ error: "Failed to fetch rooms" }));
+    }
+    return;
+  }
+
   // 방 생성 엔드포인트
   if (parsedUrl.pathname === "/rooms" && req.method === "POST") {
     let body = "";
@@ -148,6 +173,7 @@ const httpServer = createServer((req, res) => {
           password: isPasswordProtected ? password : undefined, // 비밀번호가 설정된 경우에만 저장
           createdAt: Date.now(),
           autoplay: true,
+          description: description, // 방 설명 추가
         });
 
         // 이름으로도 방을 찾을 수 있도록 매핑 추가
@@ -510,4 +536,3 @@ function startServer(port: number, attempts = 0) {
 }
 
 startServer(currentPort);
-
