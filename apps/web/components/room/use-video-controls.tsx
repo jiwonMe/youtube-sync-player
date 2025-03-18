@@ -228,7 +228,8 @@ export function useVideoControls({
     const hasControlPermission = roomState.videoControlPermission === 'all-users' || isUserHost();
     if (!hasControlPermission) return;
     
-    socket.emit("video:change", { videoId });
+    console.log(`[VideoSelect] video:change 이벤트 발송 (ID: ${videoId})`);
+    socket.emit("video:change", videoId);
   };
   
   // 비디오 제거 핸들러
