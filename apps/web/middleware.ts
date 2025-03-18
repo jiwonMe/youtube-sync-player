@@ -7,7 +7,7 @@ const isPublicRoute = createRouteMatcher([
   "/", 
   "/join-room(.*)/", 
   "/room/(.*)/", 
-  "/api/((?!youtube/token).+)",  // API routes except youtube/token
+  "/api/(?!youtube/token)(.*)",  // All API routes except /api/youtube/token
   "/sign-in/(.*)", 
   "/sign-in",
   "/sign-up/(.*)",
@@ -16,11 +16,20 @@ const isPublicRoute = createRouteMatcher([
 ])
 
 export default clerkMiddleware(async (auth, req) => {
-  if (!isPublicRoute(req)) {
-    await auth.protect()
+  const path = req.nextUrl.pathname;
+  
+  // 경로가 공개 라우트인지 확인
+  if (isPublicRoute(req)) {
+    return NextResponse.next();
   }
   
-  return NextResponse.next()
+  // 공개 라우트가 아니면 인증 필요
+  try {
+    await auth.protect();
+    return NextResponse.next();
+  } catch (error) {
+    return NextResponse.redirect(new URL("/sign-in", req.url));
+  }
 })
 
 export const config = {
