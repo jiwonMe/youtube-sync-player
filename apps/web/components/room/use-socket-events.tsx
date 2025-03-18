@@ -228,33 +228,33 @@ export function useSocketEvents({
       }
     };
 
-    // 시크 이벤트 핸들러
-    const handleSeek = (data: { time: number }) => {
+    // 비디오 진행 바 클릭 핸들러 (시크 기능)
+    const handleSeek = (data: { currentTime: number }) => {
       if (!playerRef.current) {
         console.log('[Seek 이벤트 무시] 플레이어 참조 없음');
         return;
       }
       
       try {
-        console.log(`[Seek 이벤트 수신] 시간: ${data.time.toFixed(2)}초로 이동 요청`);
+        console.log(`[Seek 이벤트 수신] 시간: ${data.currentTime.toFixed(2)}초로 이동 요청`);
         
         // 플레이어 상태 확인
         const currentPlayerTime = playerRef.current.getCurrentTime ? playerRef.current.getCurrentTime() : 0;
-        console.log(`[Seek 처리] 현재 플레이어 시간: ${currentPlayerTime.toFixed(2)}, 목표 시간: ${data.time.toFixed(2)}`);
+        console.log(`[Seek 처리] 현재 플레이어 시간: ${currentPlayerTime.toFixed(2)}, 목표 시간: ${data.currentTime.toFixed(2)}`);
         
         // 플레이어 컨트롤 업데이트 방지
         console.log('[Seek 처리] 플레이어 상태 변경 잠금 설정');
         lockPlayerStateChange(true);
         
         // 플레이어 시간 업데이트
-        console.log(`[Seek 처리] 플레이어를 ${data.time.toFixed(2)}초로 이동`);
-        playerRef.current.seekTo(data.time);
-        lastKnownTimeRef.current = data.time;
+        console.log(`[Seek 처리] 플레이어를 ${data.currentTime.toFixed(2)}초로 이동`);
+        playerRef.current.seekTo(data.currentTime);
+        lastKnownTimeRef.current = data.currentTime;
         
         // 룸 상태 업데이트
         setRoomState((prev) => ({
           ...prev,
-          currentTime: data.time,
+          currentTime: data.currentTime,
         }));
         
         // 0.5초 후 플레이어 컨트롤 잠금 해제
@@ -267,12 +267,60 @@ export function useSocketEvents({
       }
     };
 
+    // 비디오 변경 이벤트 핸들러
+    const handleVideoChange = (videoId: string) => {
+      if (!playerRef.current) {
+        console.log('[VideoChange 이벤트 무시] 플레이어 참조 없음');
+        return;
+      }
+      
+      try {
+        console.log(`[VideoChange 이벤트 수신] 비디오 ID: ${videoId}`);
+        
+        // 비디오 변경 중임을 표시
+        setIsVideoChanging(true);
+        
+        // 플레이어 상태 변경 잠금
+        lockPlayerStateChange(true);
+        
+        // 플레이리스트에서 해당 비디오 찾기
+        const video = roomState.playlist.find(v => v.videoId === videoId);
+        
+        if (video) {
+          console.log(`[VideoChange 처리] 비디오 변경: "${video.title}"`);
+          
+          // 룸 상태 업데이트
+          setRoomState(prev => ({
+            ...prev,
+            currentVideo: video,
+            currentTime: 0,
+            isPlaying: true
+          }));
+        } else {
+          console.log(`[VideoChange 오류] 비디오 ID ${videoId}를 플레이리스트에서 찾을 수 없음`);
+        }
+        
+        // 비디오 변경 후 상태 잠금 해제 (지연 적용)
+        setTimeout(() => {
+          console.log('[VideoChange 처리] 플레이어 상태 변경 잠금 해제');
+          lockPlayerStateChange(false);
+          setIsVideoChanging(false);
+        }, 1000); // 비디오 로딩을 위해 더 긴 지연 시간 적용
+      } catch (err) {
+        console.error("Error handling video change event:", err);
+        // 에러가 발생해도 잠금 해제 확보
+        lockPlayerStateChange(false);
+        setIsVideoChanging(false);
+      }
+    };
+
     // 이벤트 리스너 등록
     socket.on("player:play", handlePlay);
     socket.on("player:pause", handlePause);
     socket.on("player:requestSync", handleSyncRequest);
     socket.on("player:sync", handleSync);
     socket.on("player:seek", handleSeek);
+    socket.on("video:change", handleVideoChange);
 
     // 컴포넌트 언마운트 시 이벤트 리스너 제거
     return () => {
@@ -281,15 +329,18 @@ export function useSocketEvents({
       socket.off("player:requestSync", handleSyncRequest);
       socket.off("player:sync", handleSync);
       socket.off("player:seek", handleSeek);
+      socket.off("video:change", handleVideoChange);
     };
   }, [
     socket,
     playerRef,
     roomState.currentVideo,
+    roomState.playlist,
     isUserHost,
     setRoomState,
     lockPlayerStateChange,
     lastKnownTimeRef,
+    setIsVideoChanging,
   ]);
 
   return {

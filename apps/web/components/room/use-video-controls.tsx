@@ -166,22 +166,57 @@ export function useVideoControls({
   };
   
   // 다음 비디오 재생 핸들러
-  const handleNextVideo = () => {
-    if (!socket || !roomState.currentVideo) return;
+  const handleNextVideo = (forceNext: boolean = false) => {
+    if (!socket || !roomState.currentVideo) {
+      console.log('[NextVideo 무시] 소켓 또는 현재 비디오 없음');
+      return;
+    }
     
     // 권한 체크
     const hasControlPermission = roomState.videoControlPermission === 'all-users' || isUserHost();
-    if (!hasControlPermission) return;
+    if (!hasControlPermission) {
+      console.log('[NextVideo 권한 없음] 비디오 제어 권한 없음');
+      return;
+    }
     
-    const currentIndex = roomState.playlist.findIndex(
-      (v) => v.id === roomState.currentVideo?.id
-    );
-    
-    if (currentIndex < roomState.playlist.length - 1) {
-      const nextVideo = roomState.playlist[currentIndex + 1];
-      if (nextVideo) {
-        socket.emit("video:change", { videoId: nextVideo.videoId });
+    try {
+      console.log('[NextVideo] 다음 비디오 재생 요청');
+      
+      // 현재 비디오 인덱스 찾기 (비디오 객체의 id가 아닌 videoId로 검색)
+      const currentIndex = roomState.playlist.findIndex(
+        (v) => v.videoId === roomState.currentVideo?.videoId
+      );
+      
+      console.log(`[NextVideo] 현재 인덱스: ${currentIndex}, 총 비디오: ${roomState.playlist.length}`);
+      
+      if (currentIndex < roomState.playlist.length - 1) {
+        const nextVideo = roomState.playlist[currentIndex + 1];
+        if (nextVideo) {
+          console.log(`[NextVideo] 다음 비디오 찾음: "${nextVideo.title}"`);
+          
+          // 비디오 변경 중 상태로 설정
+          setIsVideoChanging(true);
+          
+          // 비디오 변경 소켓 이벤트 발송
+          console.log(`[NextVideo] video:change 이벤트 발송 (ID: ${nextVideo.videoId})`);
+          socket.emit("video:change", nextVideo.videoId);
+          
+          // 비디오 변경 후 상태 업데이트를 위해 지연 설정
+          setTimeout(() => {
+            setIsVideoChanging(false);
+          }, 1000);
+          
+          return true;
+        }
+      } else {
+        console.log('[NextVideo] 다음 비디오가 없음 (마지막 비디오)');
       }
+      
+      return false;
+    } catch (error) {
+      console.error("Error changing to next video:", error);
+      setIsVideoChanging(false);
+      return false;
     }
   };
   

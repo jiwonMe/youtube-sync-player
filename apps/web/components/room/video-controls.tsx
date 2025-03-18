@@ -158,7 +158,7 @@ export function VideoControls({
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={() => handleNextVideo()}
+                  onClick={() => handleNextVideo(true)}
                   disabled={!currentVideo || isLoading || !hasNextVideo || !isAllowedToControl}
                   className="h-9 w-9 rounded-full"
                 >

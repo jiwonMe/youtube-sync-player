@@ -264,29 +264,43 @@ export default function RoomClient({ roomId }: { roomId: string }) {
 
     // 비디오 변경 리스너
     socketIo.on("video:change", (data) => {
-      const video = roomState.playlist.find((v) => v.videoId === data.videoId)
+      console.log("[video:change 수신]", data);
+      
+      // data가 문자열(videoId)인 경우와 객체({videoId})인 경우 모두 처리
+      const videoId = typeof data === 'string' ? data : data.videoId;
+      
+      if (!videoId) {
+        console.error("[video:change 오류] 유효한 videoId가 없습니다", data);
+        return;
+      }
+      
+      const video = roomState.playlist.find((v) => v.videoId === videoId);
+      
       if (video) {
-        setIsVideoChanging(true)
+        console.log(`[video:change 처리] 비디오 변경: "${video.title}", ID: ${video.videoId}`);
+        setIsVideoChanging(true);
         
         setRoomState((prev) => ({
           ...prev,
           currentVideo: video,
-          currentTime: data.currentTime || 0,
+          currentTime: typeof data === 'object' && data.currentTime ? data.currentTime : 0,
           isPlaying: true,
-        }))
+        }));
         
         setTimeout(() => {
-          const playlistItem = document.getElementById(`playlist-item-${video.id}`)
+          const playlistItem = document.getElementById(`playlist-item-${video.id}`);
           if (playlistItem) {
-            playlistItem.scrollIntoView({ behavior: 'smooth', block: 'center' })
+            playlistItem.scrollIntoView({ behavior: 'smooth', block: 'center' });
           }
           
           setTimeout(() => {
-            setIsVideoChanging(false)
-          }, 500)
-        }, 300)
+            setIsVideoChanging(false);
+          }, 500);
+        }, 300);
+      } else {
+        console.error(`[video:change 오류] 플레이리스트에서 videoId: ${videoId}를 찾을 수 없습니다`);
       }
-    })
+    });
 
     // 플레이리스트 업데이트 리스너
     socketIo.on("playlist:update", (playlist) => {
