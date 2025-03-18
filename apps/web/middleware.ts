@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
-import { clerkMiddleware } from "@clerk/nextjs/server";
-import { createRouteMatcher } from "@clerk/nextjs/server";
+import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 import type { NextRequest } from "next/server";
 
 // Define public routes that don't require authentication
@@ -9,7 +8,7 @@ const isPublicRoute = createRouteMatcher([
   "/", 
   "/join-room(.*)",  
   "/room/(.*)",  
-  "/api/(?!youtube/token)(.*)",  // All API routes except /api/youtube/token
+  "/api/rooms(.*)",  // /api/rooms 경로는 공개
   "/sign-in(.*)", 
   "/sign-up(.*)",
   "/privacy-policy"
@@ -17,12 +16,31 @@ const isPublicRoute = createRouteMatcher([
 
 // Clerk middleware 구현
 export default clerkMiddleware(async (auth, req: NextRequest) => {
+  // 정적 파일은 항상 공개
+  if (
+    req.nextUrl.pathname.startsWith("/_next") ||
+    req.nextUrl.pathname.startsWith("/favicon") ||
+    req.nextUrl.pathname.includes("/static/")
+  ) {
+    return NextResponse.next();
+  }
+
   // 공개 라우트는 인증 필요 없음
   if (isPublicRoute(req)) {
     return NextResponse.next();
   }
 
-  // 인증이 필요한 경로는 보호
+  // /api/youtube/token 경로는 인증 필요
+  if (req.nextUrl.pathname.startsWith("/api/youtube/token")) {
+    try {
+      await auth.protect();
+      return NextResponse.next();
+    } catch (error) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+  }
+
+  // 그 외 인증이 필요한 경로는 보호
   try {
     await auth.protect();
     return NextResponse.next();
@@ -35,8 +53,9 @@ export default clerkMiddleware(async (auth, req: NextRequest) => {
 // 특히 /api/youtube/token 경로를 반드시 포함하도록 합니다
 export const config = {
   matcher: [
+    // 정적 파일 및 이미지를 제외한 모든 경로
     "/((?!_next/static|_next/image|favicon.ico).*)",
-    "/api/youtube/token"
-  ],
+    // API 경로 명시적 포함 (특히 /api/youtube/token)
+    "/api/(.*)"
+  ]
 }
-
