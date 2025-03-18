@@ -1,5 +1,4 @@
-
 {
   "version": 2,
-  "workspaceRoot": "apps/web"
+  "outputDirectory": "apps/web/.next"
 }
