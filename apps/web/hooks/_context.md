@@ -7,6 +7,7 @@
 - `use-mobile.tsx`: 모바일 기기 감지를 위한 커스텀 훅
 - `use-player-sync.ts`: YouTube 플레이어 동기화를 위한 커스텀 훅
 - `use-toast.ts`: 토스트 알림 표시를 위한 커스텀 훅
+- `use-track-event.ts`: Mixpanel 이벤트 추적을 위한 커스텀 훅
 
 ## 주요 훅 설명
 
@@ -53,6 +54,30 @@ toast({
   variant: "success",
 });
 ```
+
+### use-track-event.ts
+
+이 훅은 Mixpanel을 사용하여 사용자 행동과 이벤트를 추적하는 데 사용됩니다. 컴포넌트 단위로 이벤트 추적을 간소화하고 일관성 있게 유지합니다.
+
+```tsx
+const { track, trackButtonClick, trackFeatureUsed, trackError } = useTrackEvent('ComponentName');
+
+// 사용 예시
+<Button 
+  onClick={() => {
+    trackButtonClick('login-button', { method: 'email' });
+    // 로그인 로직
+  }}
+>
+  로그인
+</Button>
+```
+
+주요 기능:
+- 일반 이벤트 추적
+- 버튼 클릭 이벤트 추적
+- 기능 사용 이벤트 추적
+- 에러 이벤트 추적
 
 ## 훅 설계 원칙
 

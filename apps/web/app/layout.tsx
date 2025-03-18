@@ -5,6 +5,7 @@ import { ThemeProvider } from "@/components/theme-provider"
 import { Navbar } from "@/components/navbar"
 import { Footer } from "@/components/footer"
 import { CLERK_PUBLISHABLE_KEY } from "@/lib/env"
+import { AnalyticsProvider } from "@/lib/analytics-context"
 import "./globals.css"
 import { usePathname } from "next/navigation"
 
@@ -45,9 +46,11 @@ export default function RootLayout({
       <html lang="en" suppressHydrationWarning>
         <body className={inter.className}>
           <ThemeProvider defaultTheme="system">
-            <Navbar />
-            <main className="min-h-[calc(100vh-4rem)]">{children}</main>
-            <ClientFooter />
+            <AnalyticsProvider>
+              <Navbar />
+              <main className="min-h-[calc(100vh-4rem)]">{children}</main>
+              <ClientFooter />
+            </AnalyticsProvider>
           </ThemeProvider>
         </body>
       </html>

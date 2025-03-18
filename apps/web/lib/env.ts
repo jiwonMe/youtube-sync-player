@@ -12,3 +12,9 @@ if (!CLERK_SECRET_KEY) {
 // Socket.io server URL
 export const SOCKET_URL = process.env.NEXT_PUBLIC_SOCKET_URL
 
+// Mixpanel token for analytics
+export const MIXPANEL_TOKEN = process.env.NEXT_PUBLIC_MIXPANEL_TOKEN
+if (!MIXPANEL_TOKEN && process.env.NODE_ENV === 'production') {
+  console.warn("Missing NEXT_PUBLIC_MIXPANEL_TOKEN environment variable in production")
+}
+

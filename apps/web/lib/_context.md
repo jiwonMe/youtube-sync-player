@@ -6,6 +6,9 @@
 
 - `env.ts`: 환경 변수 관리 및 검증
 - `utils.ts`: 범용 유틸리티 함수
+- `mixpanel.ts`: Mixpanel 분석 기능 
+- `analytics-context.tsx`: 분석 Context Provider
+- `analytics.md`: Mixpanel 분석 구현 가이드 및 전략
 
 ## 주요 파일 설명
 
@@ -30,6 +33,39 @@
 - 객체 변환
 - 기타 헬퍼 함수
 
+### mixpanel.ts
+
+이 파일은 Mixpanel을 사용한 분석 기능을 제공합니다. 사용자 행동과 이벤트를 추적하는 데 필요한 유틸리티 함수들을 포함합니다.
+
+주요 기능:
+- Mixpanel 인스턴스 초기화
+- 이벤트 추적 함수
+- 사용자 식별 함수
+- 이벤트 카테고리 정의
+- 기본 이벤트 속성 생성
+
+### analytics-context.tsx
+
+이 파일은 React Context API를 사용하여 애플리케이션 전체에서 분석 기능을 사용할 수 있도록 합니다.
+
+주요 기능:
+- 분석 Context 생성
+- 분석 Provider 컴포넌트
+- 페이지 조회 이벤트 자동 추적
+- 사용자 식별 자동화
+- 이벤트 추적 함수 제공
+
+### analytics.md
+
+이 파일은 Mixpanel 분석 기능의 구현 방법과 이벤트 추적 전략에 대한 가이드를 제공합니다.
+
+주요 내용:
+- Mixpanel 설정 방법
+- 이벤트 추적 사용법
+- 이벤트 추적 전략
+- 데이터 분석 방법
+- 프라이버시 고려사항
+
 ## 사용 방법
 
 이 디렉토리의 유틸리티 함수들은 애플리케이션 전체에서 import하여 사용할 수 있습니다:
@@ -37,9 +73,16 @@
 ```tsx
 import { cn } from "@/lib/utils"
 import { env } from "@/lib/env"
+import { useAnalytics } from "@/lib/analytics-context"
+import { Events } from "@/lib/mixpanel"
 
 // 사용 예시
-<div className={cn("base-class", isActive && "active-class")}>
+const { trackEvent } = useAnalytics();
+
+<div 
+  className={cn("base-class", isActive && "active-class")}
+  onClick={() => trackEvent(Events.BUTTON_CLICKED, { buttonName: "example-button" })}
+>
   {env.NEXT_PUBLIC_APP_NAME}
 </div>
 ```

@@ -16,6 +16,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Plus, Youtube, Link as LinkIcon, Search, Clock, CheckCircle2 } from "lucide-react"
 import { Skeleton } from "@/components/ui/skeleton"
 import { VideoItem } from "@/types/room"
+import { useTrackEvent } from "@/hooks/use-track-event"
+import { Events } from "@/lib/mixpanel"
 
 /**
  * YouTube Music URL을 일반 YouTube URL로 변환
@@ -102,6 +104,9 @@ export function AddVideoDialog({
   const inputRef = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
   
+  // Mixpanel 이벤트 추적을 위한 훅 초기화
+  const analytics = useTrackEvent('AddVideoDialog');
+  
   // 검색 상태 관리
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [isSearching, setIsSearching] = useState<boolean>(false);
@@ -112,6 +117,9 @@ export function AddVideoDialog({
   // 대화상자가 열릴 때 현재 활성 탭에 따라 적절한 입력 필드에 포커스
   useEffect(() => {
     if (showAddVideoDialog) {
+      // 대화상자가 열릴 때 이벤트 추적
+      analytics.trackFeatureUsed('dialog_opened', { activeTab });
+      
       setTimeout(() => {
         if (activeTab === "url" && inputRef.current) {
           inputRef.current?.focus();
@@ -125,7 +133,7 @@ export function AddVideoDialog({
       setSearchResults([]);
       setSelectedVideo(null);
     }
-  }, [showAddVideoDialog, activeTab]);
+  }, [showAddVideoDialog, activeTab, analytics]);
 
   // Enter 키로 추가 가능하게 핸들러 추가
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -152,6 +160,14 @@ export function AddVideoDialog({
     if (finalUrl !== videoUrl) {
       setVideoUrl(finalUrl);
     }
+    
+    // 비디오 추가 시도 전 이벤트 추적
+    analytics.track(Events.VIDEO_ADDED, { 
+      method: 'url',
+      url: finalUrl,
+      isMusicUrl: finalUrl !== videoUrl
+    });
+    
     await handleAddVideo();
   };
   
@@ -163,6 +179,11 @@ export function AddVideoDialog({
     setSearchResults([]);
     setSelectedVideo(null);
     
+    // 검색 시도 이벤트 추적
+    analytics.trackFeatureUsed('search_attempt', { 
+      query: searchQuery 
+    });
+    
     try {
       const response = await fetch(`/api/youtube/search?query=${encodeURIComponent(searchQuery)}`);
       if (!response.ok) {
@@ -171,8 +192,20 @@ export function AddVideoDialog({
       
       const data = await response.json();
       setSearchResults(data.results || []);
+      
+      // 검색 성공 이벤트 추적
+      analytics.trackFeatureUsed('search_success', { 
+        query: searchQuery,
+        resultsCount: data.results?.length || 0
+      });
     } catch (error) {
       console.error("YouTube 검색 오류:", error);
+      
+      // 검색 실패 이벤트 추적
+      analytics.trackError("youtube_search_failed", {
+        query: searchQuery,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
     } finally {
       setIsSearching(false);
     }
@@ -183,11 +216,24 @@ export function AddVideoDialog({
     setSelectedVideo(video);
     // URL 탭의 URL 필드도 업데이트
     setVideoUrl(`https://www.youtube.com/watch?v=${video.videoId}`);
+    
+    // 비디오 선택 이벤트 추적
+    analytics.trackFeatureUsed('video_selected_from_search', { 
+      videoId: video.videoId,
+      title: video.title
+    });
   };
   
   // 선택한 비디오 추가 핸들러
   const handleAddSelectedVideo = async () => {
     if (selectedVideo) {
+      // 검색으로 비디오 추가 이벤트 추적
+      analytics.track(Events.VIDEO_ADDED, { 
+        method: 'search',
+        videoId: selectedVideo.videoId,
+        title: selectedVideo.title
+      });
+      
       // URL 탭과 동일한 처리 로직 활용
       await handleAddVideo();
       
@@ -196,17 +242,26 @@ export function AddVideoDialog({
     }
   };
   
-  // 선택한 검색 항목으로 비디오 추가
-  const addVideoFromSearch = async () => {
-    if (selectedVideo) {
-      await handleAddSelectedVideo();
-    }
+  // 탭 변경 핸들러
+  const handleTabChange = (value: string) => {
+    setActiveTab(value);
+    
+    // 탭 변경 이벤트 추적
+    analytics.trackFeatureUsed('tab_changed', { 
+      fromTab: activeTab,
+      toTab: value
+    });
   };
 
   return (
     <Dialog open={showAddVideoDialog} onOpenChange={setShowAddVideoDialog}>
       <DialogTrigger asChild>
-        <Button size="sm" variant="outline" className={triggerButtonClassName}>
+        <Button 
+          size="sm" 
+          variant="outline" 
+          className={triggerButtonClassName}
+          onClick={() => analytics.trackButtonClick('add_video_trigger')}
+        >
           <Plus className="h-4 w-4 mr-2" />
           {triggerButtonText}
         </Button>
@@ -222,7 +277,7 @@ export function AddVideoDialog({
           </DialogDescription>
         </DialogHeader>
         
-        <Tabs defaultValue="url" value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <Tabs defaultValue="url" value={activeTab} onValueChange={handleTabChange} className="w-full">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="url" className="flex items-center gap-2">
               <LinkIcon className="h-4 w-4" />
@@ -384,7 +439,7 @@ export function AddVideoDialog({
                   취소
                 </Button>
                 <Button 
-                  onClick={addVideoFromSearch} 
+                  onClick={handleAddSelectedVideo} 
                   disabled={isAddingVideo || !selectedVideo}
                   className="min-w-[80px]"
                 >
