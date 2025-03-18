@@ -13,9 +13,16 @@ export type RoomUser = {
 // Chat Message 타입
 export type ChatMessage = {
   id: string
-  user: RoomUser
   message: string
   timestamp: number
+  
+  // 서버에서 사용하는 필드 (기존 소켓 서버 호환성)
+  userId?: string
+  userName?: string
+  userImage?: string
+  
+  // 클라이언트에서 사용하는 필드 (기존 UI 컴포넌트 호환성)
+  user?: RoomUser
 }
 
 /**

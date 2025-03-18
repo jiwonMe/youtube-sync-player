@@ -786,6 +786,7 @@ export default function RoomClient({ roomId }: { roomId: string }) {
                 {showMobile === "chat" ? (
                   <ChatPanel
                     messages={roomState.messages}
+                    eventLogs={roomState.eventLogs || []}
                     chatInput={chatInput}
                     setChatInput={setChatInput}
                     handleChatSubmit={handleChatSubmit}
@@ -889,6 +890,7 @@ export default function RoomClient({ roomId }: { roomId: string }) {
                 <TabsContent value="chat" className="h-[calc(100%-3rem)] data-[state=active]:flex data-[state=active]:flex-col hidden">
                   <ChatPanel
                     messages={roomState.messages}
+                    eventLogs={roomState.eventLogs || []}
                     chatInput={chatInput}
                     setChatInput={setChatInput}
                     handleChatSubmit={handleChatSubmit}

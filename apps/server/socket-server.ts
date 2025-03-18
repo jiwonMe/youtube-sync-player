@@ -680,12 +680,16 @@ io.on("connection", (socket) => {
 
   // Handle chat message
   socket.on("chat:message", (message: string) => {
+    // Get user
+    const user = room.users.find(u => u.id === userId);
+    if (!user) return;
+    
     // Create message object
     const chatMessage: ChatMessage = {
       id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
-      userId,
+      userId: userId,
       userName: actualUserName,
-      userImage,
+      userImage: userImage || "",
       message,
       timestamp: Date.now(),
     }

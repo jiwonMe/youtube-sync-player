@@ -107,63 +107,72 @@ export function EventLogPanel({ logs }: EventLogPanelProps) {
    */
   const getEventText = (log: EventLog): string => {
     const { eventType, user, details } = log
+    const userName = user?.name || '알 수 없는 사용자'
     
     switch (eventType) {
       case 'play':
-        return `${user.name}님이 영상을 재생했습니다.`
+        return `${userName}님이 영상을 재생했습니다.`
       case 'pause':
-        return `${user.name}님이 영상을 일시정지했습니다.`
+        return `${userName}님이 영상을 일시정지했습니다.`
       case 'seek':
-        return `${user.name}님이 ${details?.time ? formatVideoTime(details.time) : ''}로 이동했습니다.`
+        return `${userName}님이 ${details?.time ? formatVideoTime(details.time) : ''}로 이동했습니다.`
       case 'videoChange':
-        return `${user.name}님이 "${details?.videoTitle || ''}" 영상으로 변경했습니다.`
+        return `${userName}님이 "${details?.videoTitle || ''}" 영상으로 변경했습니다.`
       case 'playlistAdd':
-        return `${user.name}님이 "${details?.videoTitle || ''}" 영상을 재생목록에 추가했습니다.`
+        return `${userName}님이 "${details?.videoTitle || ''}" 영상을 재생목록에 추가했습니다.`
       case 'playlistRemove':
-        return `${user.name}님이 "${details?.videoTitle || ''}" 영상을 재생목록에서 제거했습니다.`
+        return `${userName}님이 "${details?.videoTitle || ''}" 영상을 재생목록에서 제거했습니다.`
       case 'playlistReorder':
-        return `${user.name}님이 재생목록 순서를 변경했습니다.`
+        return `${userName}님이 재생목록 순서를 변경했습니다.`
       case 'hostChange':
-        return `${user.name}님이 방장이 되었습니다.`
+        return `${userName}님이 방장이 되었습니다.`
       case 'userJoin':
-        return `${user.name}님이 방에 입장했습니다.`
+        return `${userName}님이 방에 입장했습니다.`
       case 'userLeave':
-        return `${user.name}님이 방에서 나갔습니다.`
+        return `${userName}님이 방에서 나갔습니다.`
       case 'autoplayToggle':
         const autoplayStatus = details?.autoplay ? '켰' : '껐'
-        return `${user.name}님이 자동 재생을 ${autoplayStatus}습니다.`
+        return `${userName}님이 자동 재생을 ${autoplayStatus}습니다.`
       default:
-        return `${user.name}님이 알 수 없는 활동을 했습니다.`
+        return `${userName}님이 알 수 없는 활동을 했습니다.`
     }
   }
   
   return (
     <ScrollArea className="h-full w-full p-4">
-      <div className="space-y-4">
+      <div className="space-y-3">
         {logs.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-10 text-center text-muted-foreground">
-            <AlertCircle className="mb-2 h-10 w-10" />
+          <div className="flex flex-col items-center justify-center py-10 text-center text-muted-foreground/70">
+            <AlertCircle className="mb-2 h-10 w-10 opacity-40" />
             <p>아직 이벤트 로그가 없습니다.</p>
             <p className="text-sm">방에서 활동이 발생하면 여기에 표시됩니다.</p>
           </div>
         ) : (
           <>
             {logs.map((log) => (
-              <div key={log.id} className="flex items-start space-x-2 text-sm">
-                <div className="text-muted-foreground whitespace-nowrap">
-                  <Clock className="inline h-3 w-3 mr-1" />
-                  {formatTime(log.timestamp)}
+              <div 
+                key={log.id} 
+                className="flex flex-col space-y-1 p-2 hover:bg-muted/10 rounded-md transition-colors border-l-2 border-muted/20"
+              >
+                <div className="flex items-center flex-wrap gap-1.5">
+                  <div className="text-muted-foreground/70 whitespace-nowrap flex-shrink-0 text-[10px]">
+                    <Clock className="inline h-3 w-3 mr-1 opacity-60" />
+                    {formatTime(log.timestamp)}
+                  </div>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <div className="flex-shrink-0 opacity-70">{getEventIcon(log.eventType)}</div>
+                    <Badge variant={getEventBadgeVariant(log.eventType)} className="text-[9px] px-1 py-0 h-3.5 flex-shrink-0 opacity-80">
+                      {log.eventType}
+                    </Badge>
+                  </div>
                 </div>
-                <div className="mt-0.5">
-                  {getEventIcon(log.eventType)}
-                </div>
-                <Badge variant={getEventBadgeVariant(log.eventType)} className="self-start mt-0.5">
-                  {log.eventType}
-                </Badge>
-                <div className="flex-1 break-words">
-                  <span className="font-medium text-foreground">{log.user.name}</span>
-                  {log.user.isHost && <span className="ml-1 text-xs text-yellow-500">(방장)</span>}
-                  <span className="ml-1">{getEventText(log).replace(`${log.user.name}님이 `, '')}</span>
+                
+                <div className="flex flex-col pl-5 mt-0.5">
+                  <div className="flex items-center flex-wrap gap-1">
+                    <span className="font-medium text-foreground/90 whitespace-nowrap text-[11px]">{log.user?.name || '알 수 없는 사용자'}</span>
+                    {log.user?.isHost && <span className="text-[9px] text-yellow-500/70 whitespace-nowrap">(방장)</span>}
+                  </div>
+                  <span className="text-[11px] mt-0.5 text-muted-foreground/80">{getEventText(log).replace(`${log.user?.name || '알 수 없는 사용자'}님이 `, '')}</span>
                 </div>
               </div>
             ))}
