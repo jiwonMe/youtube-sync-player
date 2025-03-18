@@ -15,6 +15,19 @@ import {
 import { Plus, Youtube, Link as LinkIcon } from "lucide-react"
 
 /**
+ * YouTube Music URL을 일반 YouTube URL로 변환
+ * @param url - 변환할 URL
+ * @returns 변환된 URL
+ */
+const convertMusicYoutubeUrl = (url: string): string => {
+  // YouTube Music URL인 경우 일반 YouTube URL로 변환
+  if (url.includes('music.youtube.com')) {
+    return url.replace('music.youtube.com', 'www.youtube.com');
+  }
+  return url;
+};
+
+/**
  * 비디오 추가 대화상자 컴포넌트 Props
  */
 interface AddVideoDialogProps {
@@ -63,8 +76,25 @@ export function AddVideoDialog({
   // Enter 키로 추가 가능하게 핸들러 추가
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey && videoUrl.trim() && !isAddingVideo) {
-      handleAddVideo();
+      processAndAddVideo();
     }
+  };
+
+  // URL 입력 처리 핸들러
+  const handleUrlChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    // YouTube Music URL 자동 변환
+    const convertedUrl = convertMusicYoutubeUrl(e.target.value);
+    setVideoUrl(convertedUrl);
+  };
+
+  // 비디오 URL 처리 및 추가
+  const processAndAddVideo = async () => {
+    // 추가하기 전에 URL이 YouTube Music URL인지 한 번 더 확인
+    const finalUrl = convertMusicYoutubeUrl(videoUrl);
+    if (finalUrl !== videoUrl) {
+      setVideoUrl(finalUrl);
+    }
+    await handleAddVideo();
   };
 
   return (
@@ -82,7 +112,7 @@ export function AddVideoDialog({
             YouTube 비디오 추가
           </DialogTitle>
           <DialogDescription>
-            플레이리스트에 추가할 YouTube 비디오 URL을 입력하세요.
+            플레이리스트에 추가할 YouTube 또는 YouTube Music 비디오 URL을 입력하세요.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4">
@@ -91,9 +121,9 @@ export function AddVideoDialog({
               <LinkIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 ref={inputRef}
-                placeholder="https://www.youtube.com/watch?v=..."
+                placeholder="https://www.youtube.com/watch?v=... 또는 https://music.youtube.com/..."
                 value={videoUrl}
-                onChange={(e) => setVideoUrl(e.target.value)}
+                onChange={handleUrlChange}
                 onKeyDown={handleKeyDown}
                 className="pl-9"
               />
@@ -105,6 +135,7 @@ export function AddVideoDialog({
               <li>유튜브 영상 URL (https://www.youtube.com/watch?v=...)</li>
               <li>짧은 유튜브 URL (https://youtu.be/...)</li>
               <li>유튜브 임베드 URL (https://www.youtube.com/embed/...)</li>
+              <li>유튜브 뮤직 URL (https://music.youtube.com/...)</li>
             </ul>
           </div>
         </div>
@@ -123,7 +154,7 @@ export function AddVideoDialog({
               취소
             </Button>
             <Button 
-              onClick={handleAddVideo} 
+              onClick={processAndAddVideo} 
               disabled={isAddingVideo || !videoUrl.trim()}
               className="min-w-[80px]"
             >
