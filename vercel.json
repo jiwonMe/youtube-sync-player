@@ -1,5 +1,9 @@
 {
   "version": 2,
+  "framework": "nextjs",
+  "buildCommand": "pnpm --filter=web run build",
+  "installCommand": "pnpm install",
+  "outputDirectory": "apps/web/.next",
   "builds": [
     {
       "src": "apps/web/package.json",
@@ -9,6 +13,7 @@
       }
     }
   ],
-  "buildCommand": "pnpm --filter=web run build",
-  "installCommand": "pnpm install"
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/apps/web/$1" }
+  ]
 }
