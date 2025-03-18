@@ -14,7 +14,6 @@ import {
   Crown,
   Plus,
   Lock,
-  Activity,
   User,
   Check,
   Copy,
@@ -54,7 +53,6 @@ import { UpcomingPlaylist } from "@/components/room/upcoming-playlist"
 import { AddVideoDialog } from "@/components/room/add-video-dialog"
 import { VideoControls } from "@/components/room/video-controls"
 import { PasswordDialog } from "@/components/room/password-dialog"
-import { EventLogPanel } from "@/components/room/event-log-panel"
 import { SettingsPanel } from "@/components/room/settings-panel"
 
 // 커스텀 훅 임포트
@@ -818,8 +816,6 @@ export default function RoomClient({ roomId }: { roomId: string }) {
                     hostId={roomState.hostId} 
                     isLoading={isLoading} 
                   />
-                ) : showMobile === "eventlog" ? (
-                  <EventLogPanel logs={roomState.eventLogs || []} />
                 ) : showMobile === "settings" ? (
                   <SettingsPanel
                     socket={socket}
@@ -854,10 +850,6 @@ export default function RoomClient({ roomId }: { roomId: string }) {
                 <TabsTrigger value="users" className="flex items-center gap-1">
                   <Users className="w-4 h-4" />
                   <span className="hidden sm:inline">Users</span>
-                </TabsTrigger>
-                <TabsTrigger value="eventlog" className="flex items-center gap-1">
-                  <Activity className="w-4 h-4" />
-                  <span className="hidden sm:inline">Event Log</span>
                 </TabsTrigger>
                 <TabsTrigger value="settings" className="flex items-center gap-1">
                   <Settings className="w-4 h-4" />
@@ -901,10 +893,6 @@ export default function RoomClient({ roomId }: { roomId: string }) {
 
                 <TabsContent value="users" className="h-[calc(100%-3rem)] data-[state=active]:flex data-[state=active]:flex-col hidden">
                   <UsersPanel users={roomState.users} hostId={roomState.hostId} isLoading={isLoading} />
-                </TabsContent>
-
-                <TabsContent value="eventlog" className="h-[calc(100%-3rem)] data-[state=active]:flex data-[state=active]:flex-col hidden">
-                  <EventLogPanel logs={roomState.eventLogs || []} />
                 </TabsContent>
                 
                 <TabsContent value="settings" className="h-[calc(100%-3rem)] data-[state=active]:flex data-[state=active]:flex-col hidden">

@@ -9,7 +9,7 @@ export function useRoomUI({ roomId }: UseRoomUIProps) {
   const { toast } = useToast();
   
   // 모바일 패널 관련 상태
-  const [showMobile, setShowMobile] = useState<"chat" | "playlist" | "users" | "eventlog" | "settings" | null>(null);
+  const [showMobile, setShowMobile] = useState<"chat" | "playlist" | "users" | "settings" | null>(null);
   
   // 채팅 관련 상태
   const [chatInput, setChatInput] = useState("");
