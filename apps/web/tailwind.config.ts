@@ -83,11 +83,72 @@ const config: Config = {
   				to: {
   					height: '0'
   				}
-  			}
+  			},
+        'blob': {
+          '0%': {
+            transform: 'translate(0px, 0px) scale(1)',
+          },
+          '33%': {
+            transform: 'translate(30px, -50px) scale(1.1)',
+          },
+          '66%': {
+            transform: 'translate(-20px, 20px) scale(0.9)',
+          },
+          '100%': {
+            transform: 'translate(0px, 0px) scale(1)',
+          },
+        },
+        'bounce-x': {
+          '0%, 100%': {
+            transform: 'translateX(0)',
+            animationTimingFunction: 'cubic-bezier(0.8, 0, 1, 1)',
+          },
+          '50%': {
+            transform: 'translateX(25%)',
+            animationTimingFunction: 'cubic-bezier(0, 0, 0.2, 1)',
+          },
+        },
+        'moveBlob': {
+          '0%': { transform: 'translate(0px, 0px) scale(1)' },
+          '33%': { transform: 'translate(30px, -50px) scale(1.1)' },
+          '66%': { transform: 'translate(-20px, 20px) scale(0.9)' },
+          '100%': { transform: 'translate(0px, 0px) scale(1)' }
+        },
+        'waveAnimation': {
+          '0%': { transform: 'translateX(0)' },
+          '50%': { transform: 'translateX(-50%)' },
+          '100%': { transform: 'translateX(0)' }
+        },
+        'fade-in': {
+          '0%': { opacity: '0' },
+          '100%': { opacity: '1' }
+        },
+        'slide-up': {
+          '0%': { transform: 'translateY(20px)', opacity: '0' },
+          '100%': { transform: 'translateY(0)', opacity: '1' }
+        },
+        'line-expand': {
+          '0%': { width: '0' },
+          '100%': { width: '100%' }
+        },
+        'scroll-indicator': {
+          '0%': { transform: 'translateY(0)' },
+          '50%': { transform: 'translateY(4px)' },
+          '100%': { transform: 'translateY(0)' }
+        }
   		},
   		animation: {
   			'accordion-down': 'accordion-down 0.2s ease-out',
-  			'accordion-up': 'accordion-up 0.2s ease-out'
+  			'accordion-up': 'accordion-up 0.2s ease-out',
+        'blob': 'blob 7s infinite',
+        'pulse': 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+        'bounce-x': 'bounce-x 1s infinite',
+        'moveBlob': 'moveBlob 15s ease-in-out infinite alternate',
+        'waveAnimation': 'waveAnimation 25s linear infinite',
+        'fade-in': 'fade-in 0.5s ease-out forwards',
+        'slide-up': 'slide-up 0.5s ease-out forwards',
+        'line-expand': 'line-expand 0.5s ease-out 0.5s forwards',
+        'scroll-indicator': 'scroll-indicator 1.5s ease-in-out infinite'
   		}
   	}
   },
