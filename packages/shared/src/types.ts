@@ -42,4 +42,5 @@ export type RoomState = {
   createdAt: number;
   autoplay: boolean;
   lastSyncTime?: number;
+  videoControlPermission: 'host-only' | 'all-users';
 }; 

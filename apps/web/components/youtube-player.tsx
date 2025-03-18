@@ -30,8 +30,13 @@ export function YouTubePlayer({
   const [isPlayerMounted, setIsPlayerMounted] = useState(false)
   const [initialPlayTriggered, setInitialPlayTriggered] = useState(false)
   
-  // 비디오 ID 변경 감지를 위한 ref
+  // 상태 관리 및 디버깅을 위한 추가 state
+  const [lastAction, setLastAction] = useState<"none" | "play" | "pause">("none")
+  const [lastPlayerState, setLastPlayerState] = useState<number>(-1)
+  
+  // 비디오 ID와 isPlaying 변경 감지를 위한 ref
   const previousVideoIdRef = useRef<string>(videoId)
+  const isPlayingRef = useRef<boolean>(isPlaying)
 
   // Handle player ready
   const onReady = (event: any) => {
@@ -39,6 +44,7 @@ export function YouTubePlayer({
       actualPlayerRef.current = event.target
       setIsReady(true)
       setIsPlayerMounted(true)
+      console.log(`[Player Ready] 플레이어 준비 완료. isPlaying=${isPlaying}`);
 
       // 초기 음소거 설정
       if (isMuted) {
@@ -55,7 +61,14 @@ export function YouTubePlayer({
       // 비디오가 준비되면 재생 상태에 따라 즉시 재생
       if (isPlaying) {
         event.target.playVideo();
+        setLastAction("play");
+      } else {
+        event.target.pauseVideo();
+        setLastAction("pause");
       }
+      
+      // 초기 상태 ref 업데이트
+      isPlayingRef.current = isPlaying;
     } catch (err) {
       console.error("Error in onReady:", err)
     }
@@ -121,25 +134,48 @@ export function YouTubePlayer({
   // 비디오 ID가 변경되면 에러 상태 초기화
   useEffect(() => {
     if (previousVideoIdRef.current !== videoId) {
+      console.log(`[Video ID 변경] ${previousVideoIdRef.current} -> ${videoId}`);
       setError(null);
       setIsReady(false);
       setInitialPlayTriggered(false);
       previousVideoIdRef.current = videoId;
+      setLastAction("none");
     }
   }, [videoId]);
 
-  // Sync player state with component props
+  // isPlaying이 변경될 때 플레이어 상태 동기화
   useEffect(() => {
     if (!isReady || !isPlayerMounted) return;
     
-    safePlayerCall((player) => {
-      if (isPlaying) {
-        player.playVideo();
-        setInitialPlayTriggered(true);
-      } else {
-        player.pauseVideo();
-      }
-    });
+    // isPlaying 값이 변경되었을 때만 실행
+    if (isPlayingRef.current !== isPlaying) {
+      console.log(`[isPlaying 변경 감지] ${isPlayingRef.current} -> ${isPlaying}`);
+      
+      safePlayerCall((player) => {
+        const currentPlayerState = player.getPlayerState();
+        setLastPlayerState(currentPlayerState);
+        
+        // 실제 플레이어 상태 확인 (1: playing, 2: paused)
+        const isCurrentlyPlaying = currentPlayerState === 1;
+        const isCurrentlyPaused = currentPlayerState === 2;
+        
+        // 필요한 경우에만 상태 변경 적용
+        if (isPlaying && !isCurrentlyPlaying && currentPlayerState !== 3) { // 3: buffering
+          console.log("[상태 동기화] 재생 명령 실행");
+          player.playVideo();
+          setLastAction("play");
+        } else if (!isPlaying && isCurrentlyPlaying) {
+          console.log("[상태 동기화] 일시정지 명령 실행");
+          player.pauseVideo();
+          setLastAction("pause");
+        } else {
+          console.log(`[상태 동기화 불필요] 현재 플레이어 상태(${currentPlayerState})와 기대 상태(${isPlaying ? '재생' : '일시정지'})가 일치`);
+        }
+      });
+      
+      // 현재 상태 업데이트
+      isPlayingRef.current = isPlaying;
+    }
   }, [isPlaying, isReady, isPlayerMounted]);
 
   // Handle mute/unmute
@@ -164,7 +200,7 @@ export function YouTubePlayer({
         const currentPlayerTime = player.getCurrentTime() || 0;
         // 시간 차이가 0.5초 이상일 때만 동기화 (너무 빈번한 동기화 방지)
         if (Math.abs(currentPlayerTime - currentTime) > 0.5) {
-          console.log(`시간 동기화: ${currentPlayerTime.toFixed(2)}s -> ${currentTime.toFixed(2)}s (차이: ${Math.abs(currentPlayerTime - currentTime).toFixed(2)}s)`);
+          console.log(`[시간 동기화] ${currentPlayerTime.toFixed(2)}s -> ${currentTime.toFixed(2)}s (차이: ${Math.abs(currentPlayerTime - currentTime).toFixed(2)}s)`);
           player.seekTo(currentTime);
         }
       } catch (err) {
@@ -176,6 +212,7 @@ export function YouTubePlayer({
   // 컴포넌트 언마운트 시 플레이어 참조 정리
   useEffect(() => {
     return () => {
+      console.log("[Player Cleanup] 컴포넌트 언마운트");
       setIsPlayerMounted(false);
       setIsReady(false);
       setInitialPlayTriggered(false);
@@ -190,6 +227,22 @@ export function YouTubePlayer({
       }
     };
   }, []);
+
+  // 상태 변경 이벤트를 래핑하여 중복 이벤트 방지
+  const handleStateChange = (event: any) => {
+    const newState = event.data;
+    
+    // 상태가 변경되지 않았으면 이벤트를 무시
+    if (newState === lastPlayerState) {
+      return;
+    }
+    
+    // 마지막 상태 업데이트
+    setLastPlayerState(newState);
+    
+    // 부모 컴포넌트에 이벤트 전달
+    onStateChange(event);
+  };
 
   if (error) {
     return (
@@ -219,7 +272,7 @@ export function YouTubePlayer({
         },
       }}
       onReady={onReady}
-      onStateChange={onStateChange}
+      onStateChange={handleStateChange}
       onError={onError}
       className="w-full h-full"
     />

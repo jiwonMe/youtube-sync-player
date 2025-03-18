@@ -51,6 +51,8 @@ interface VideoControlsProps {
   handleAddVideo: () => Promise<void>
   /** 비디오 추가 중 상태 */
   isAddingVideo: boolean
+  /** 사용자가 비디오를 제어할 권한이 있는지 여부 */
+  isAllowedToControl: boolean
 }
 
 /**
@@ -76,10 +78,11 @@ export function VideoControls({
   setVideoUrl,
   handleAddVideo,
   isAddingVideo,
+  isAllowedToControl,
 }: VideoControlsProps) {
   // 비디오 진행 바 클릭 시간 이동 핸들러
   const handleProgressBarClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!currentVideo || isLoading || !playerRef.current) return;
+    if (!currentVideo || isLoading || !playerRef.current || !isAllowedToControl) return;
     
     const progressBar = e.currentTarget;
     const rect = progressBar.getBoundingClientRect();
@@ -96,7 +99,7 @@ export function VideoControls({
       {/* 비디오 진행률 표시 */}
       {currentVideo && (
         <div 
-          className="h-2 bg-muted w-full cursor-pointer relative group transition-all hover:h-3"
+          className={`h-2 bg-muted w-full ${isAllowedToControl ? 'cursor-pointer' : 'cursor-not-allowed'} relative group transition-all hover:h-3`}
           onClick={handleProgressBarClick}
           title={`${formatTime(playerRef.current?.getCurrentTime() || 0)} / ${formatTime(videoDuration)}`}
         >
@@ -117,7 +120,7 @@ export function VideoControls({
                   variant={isPlaying ? "secondary" : "default"}
                   size="icon"
                   onClick={handlePlayPause}
-                  disabled={!currentVideo || isLoading}
+                  disabled={!currentVideo || isLoading || !isAllowedToControl}
                   className="h-9 w-9 rounded-full"
                 >
                   {isPlaying ? (
@@ -128,7 +131,11 @@ export function VideoControls({
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                <p>{isPlaying ? "일시정지" : "재생"}</p>
+                {isAllowedToControl ? (
+                  <p>{isPlaying ? "일시정지" : "재생"}</p>
+                ) : (
+                  <p>권한이 없습니다. 방장만 영상을 제어할 수 있습니다.</p>
+                )}
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
@@ -140,14 +147,18 @@ export function VideoControls({
                   variant="ghost"
                   size="icon"
                   onClick={() => handleNextVideo()}
-                  disabled={!currentVideo || isLoading || !hasNextVideo}
+                  disabled={!currentVideo || isLoading || !hasNextVideo || !isAllowedToControl}
                   className="h-9 w-9 rounded-full"
                 >
                   <SkipForward className="h-4 w-4" />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                <p>다음 비디오</p>
+                {isAllowedToControl ? (
+                  <p>다음 비디오</p>
+                ) : (
+                  <p>권한이 없습니다. 방장만 영상을 제어할 수 있습니다.</p>
+                )}
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>
@@ -182,14 +193,18 @@ export function VideoControls({
                   variant={autoplay ? "secondary" : "ghost"}
                   size="icon"
                   onClick={handleToggleAutoplay}
-                  disabled={!currentVideo || isLoading}
+                  disabled={!currentVideo || isLoading || !isAllowedToControl}
                   className="h-9 w-9 rounded-full"
                 >
                   <Repeat className={`h-4 w-4 ${autoplay ? "text-primary-foreground" : ""}`} />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                <p>{autoplay ? "자동 재생 켜짐" : "자동 재생 꺼짐"}</p>
+                {isAllowedToControl ? (
+                  <p>{autoplay ? "자동 재생 켜짐" : "자동 재생 꺼짐"}</p>
+                ) : (
+                  <p>권한이 없습니다. 방장만 설정을 변경할 수 있습니다.</p>
+                )}
               </TooltipContent>
             </Tooltip>
           </TooltipProvider>

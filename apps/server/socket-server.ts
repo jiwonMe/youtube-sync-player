@@ -46,6 +46,29 @@ function generateRandomNickname(): string {
   return `${adjective} ${color} ${noun}`;
 }
 
+// EventLog 타입 정의
+type EventLog = {
+  id: string
+  user: RoomUser
+  eventType: 'play' | 'pause' | 'seek' | 'videoChange' | 'playlistAdd' | 'playlistRemove' | 'playlistReorder' | 'hostChange' | 'userJoin' | 'userLeave' | 'autoplayToggle'
+  details?: {
+    videoTitle?: string
+    videoId?: string
+    time?: number
+    autoplay?: boolean
+    [key: string]: any
+  }
+  timestamp: number
+}
+
+// PlayerState 타입 정의 추가
+type PlayerState = {
+  playing: boolean
+  currentTime: number
+  playbackRate?: number
+  lastUpdated?: number
+}
+
 // RoomState 타입 정의 추가
 type RoomState = {
   roomId: string
@@ -56,13 +79,16 @@ type RoomState = {
   playlist: VideoItem[]
   isPlaying: boolean
   currentTime: number
+  playerState?: PlayerState // PlayerState 추가
   messages: ChatMessage[]
+  eventLogs: EventLog[] // 이벤트 로그 배열 추가
   isPasswordProtected: boolean
   password?: string // 비밀번호 필드 추가
   createdAt: number
   autoplay: boolean // 자동 재생 설정 추가
   description?: string // 방 설명 필드 추가
   lastSyncTime?: number // 마지막 동기화 시간 추가
+  videoControlPermission: 'host-only' | 'all-users' // 비디오 제어 권한 설정
 }
 
 // Load environment variables
@@ -212,12 +238,14 @@ const httpServer = createServer((req, res) => {
           isPlaying: false,
           currentTime: 0,
           messages: [],
+          eventLogs: [], // 이벤트 로그 배열 초기화
           isPasswordProtected,
           password: isPasswordProtected ? password : undefined, // 비밀번호가 설정된 경우에만 저장
           createdAt: Date.now(),
           autoplay: true,
           description: description, // 방 설명 추가
           lastSyncTime: Date.now(), // 마지막 동기화 시간 추가
+          videoControlPermission: 'host-only', // 기본값은 방장만 제어 가능
         });
 
         // 이름으로도 방을 찾을 수 있도록 매핑 추가
@@ -325,10 +353,12 @@ io.on("connection", (socket) => {
       isPlaying: false,
       currentTime: 0,
       messages: [],
+      eventLogs: [], // 이벤트 로그 배열 초기화
       isPasswordProtected: false,
       createdAt: Date.now(),
       autoplay: true,
       lastSyncTime: Date.now(), // 마지막 동기화 시간 추가
+      videoControlPermission: 'host-only', // 기본값은 방장만 제어 가능
     })
   }
 
@@ -368,159 +398,284 @@ io.on("connection", (socket) => {
 
   // 주기적인 동기화: 호스트로부터 현재 재생 상태 수신
   socket.on("player:sync", (data: { isPlaying: boolean; currentTime: number; videoId?: string }) => {
-    // 호스트로부터의 동기화 요청인지 확인
-    if (userId === room.hostId) {
-      // 방 상태 업데이트
+    if (!room) return;
+    
+    // 호스트 권한 확인
+    const isHost = userId === room.hostId;
+    if (!isHost) {
+      console.log(`[동기화 오류] 호스트가 아닌 사용자의 동기화 요청 무시: ${socket.id}`);
+      return;
+    }
+    
+    // 현재 시간이 거의 같은 경우는 불필요한 업데이트 방지
+    const timeChanged = Math.abs(room.currentTime - data.currentTime) > 0.5;
+    const stateChanged = room.isPlaying !== data.isPlaying;
+    
+    // 상태나 시간이 변경된 경우만 업데이트
+    if (stateChanged || timeChanged) {
+      // 룸 상태 업데이트
       room.isPlaying = data.isPlaying;
       room.currentTime = data.currentTime;
       room.lastSyncTime = Date.now();
       
-      // 비디오 ID가 변경된 경우 현재 비디오 업데이트
-      if (data.videoId && room.currentVideo && room.currentVideo.videoId !== data.videoId) {
-        const video = room.playlist.find(v => v.videoId === data.videoId);
-        if (video) {
-          room.currentVideo = video;
-        }
-      }
-      
-      // 다른 사용자들에게 동기화 데이터 브로드캐스트
+      // 다른 참가자들에게 동기화 데이터 전송
       socket.to(roomId).emit("player:sync", {
-        isPlaying: room.isPlaying,
-        currentTime: room.currentTime,
-        syncTime: room.lastSyncTime,
-        videoId: room.currentVideo?.videoId,
-      });
-    }
-  });
-
-  // 비호스트 클라이언트에서 동기화 요청
-  socket.on("player:requestSync", () => {
-    // 방 상태를 호스트에게 동기화 요청
-    const hostUser = room.users.find(u => u.id === room.hostId);
-    if (hostUser) {
-      io.to(hostUser.socketId).emit("player:requestSync", {
-        userId: userId,
-        socketId: socket.id
-      });
-    } else {
-      // 호스트가 없으면 현재 서버에 저장된 상태 전송
-      socket.emit("player:sync", {
-        isPlaying: room.isPlaying,
-        currentTime: room.currentTime,
-        syncTime: room.lastSyncTime,
-        videoId: room.currentVideo?.videoId,
-      });
-    }
-  });
-
-  // 호스트가 특정 사용자에게 동기화 데이터 전송
-  socket.on("player:syncTo", (data: { targetSocketId: string; isPlaying: boolean; currentTime: number; videoId?: string }) => {
-    if (userId === room.hostId) {
-      io.to(data.targetSocketId).emit("player:sync", {
         isPlaying: data.isPlaying,
         currentTime: data.currentTime,
         syncTime: Date.now(),
         videoId: data.videoId || room.currentVideo?.videoId,
       });
+      
+      console.log(`[동기화] 호스트(${socket.id})가 상태 동기화: ${data.isPlaying ? '재생' : '일시정지'}, 시간: ${data.currentTime.toFixed(2)}s`);
     }
   });
 
-  // Handle player state change
-  socket.on("player:stateChange", (data: { isPlaying: boolean; currentTime: number }) => {
-    // Update room state
-    room.isPlaying = data.isPlaying
-    room.currentTime = data.currentTime
-    room.lastSyncTime = Date.now()
+  // 클라이언트가 동기화 요청
+  socket.on("player:requestSync", () => {
+    if (!room) return;
+    
+    const hostUser = room.users.find(u => u.id === room.hostId);
+    if (!hostUser) {
+      console.log(`[동기화 요청 오류] 방(${roomId})에 호스트가 없습니다.`);
+      return;
+    }
+    
+    // 호스트가 아닌 사용자의 동기화 요청인 경우
+    if (userId !== room.hostId) {
+      console.log(`[동기화 요청] 사용자(${socket.id})가 동기화 요청`);
+      
+      // 호스트에게 이 사용자를 위한 동기화 데이터 요청
+      io.to(hostUser.socketId).emit("player:requestSync", {
+        userId: userId,
+        socketId: socket.id
+      });
+    }
+  });
+  
+  // 호스트가 특정 사용자에게 동기화 데이터 전송
+  socket.on("player:syncTo", (data: { targetSocketId: string; isPlaying: boolean; currentTime: number; videoId?: string }) => {
+    if (userId !== room.hostId) {
+      console.log(`[동기화 오류] 호스트가 아닌 사용자의 syncTo 요청 무시: ${socket.id}`);
+      return;
+    }
+    
+    console.log(`[동기화 전송] 호스트가 사용자(${data.targetSocketId})에게 상태 전송: ${data.isPlaying ? '재생' : '일시정지'}, 시간: ${data.currentTime.toFixed(2)}s`);
+    
+    // 해당 사용자에게 동기화 데이터 전송
+    io.to(data.targetSocketId).emit("player:sync", {
+      isPlaying: data.isPlaying,
+      currentTime: data.currentTime,
+      syncTime: Date.now(),
+      videoId: data.videoId || room.currentVideo?.videoId,
+    });
+  });
 
-    // Broadcast to other users
-    socket.to(roomId).emit("player:stateChange", data)
-  })
+  // Handle player state change
+  socket.on("player:stateChange", (data: { roomId: string; stateChange: { playing: boolean; currentTime: number; playbackRate?: number } }) => {
+    const { roomId, stateChange } = data;
+    const room = rooms.get(roomId);
+
+    if (!room) {
+      console.log(`[오류] 존재하지 않는 방(${roomId})에 대한 상태 변경 요청 무시`);
+      return;
+    }
+
+    // 현재 소켓 ID로 사용자 조회
+    const currentUser = room.users.find((u) => u.socketId === socket.id);
+    if (!currentUser) {
+      console.log(`[오류] 요청한 사용자를 룸(${roomId})에서 찾을 수 없습니다. 소켓 ID: ${socket.id}`);
+      return;
+    }
+
+    // 비디오 제어 권한 확인
+    const hasPermission = room.videoControlPermission === 'all-users' || currentUser.isHost;
+    if (!hasPermission) {
+      console.log(`[오류] 사용자(${currentUser.name})에게 비디오 제어 권한이 없습니다. 무시합니다.`);
+      return; 
+    }
+    
+    // 현재 방 상태와 요청 상태가 동일한 경우 불필요한 업데이트 방지
+    if (room.isPlaying === stateChange.playing) {
+      console.log(`[상태 변경 무시] 현재 상태(${room.isPlaying ? '재생' : '일시정지'})와 요청 상태(${stateChange.playing ? '재생' : '일시정지'})가 동일합니다.`);
+      
+      // 단, 시간이 크게 다른 경우는 업데이트 진행 (비디오 시크)
+      if (Math.abs(room.currentTime - stateChange.currentTime) > 1) {
+        console.log(`[시간 동기화] 상태는 동일하지만 시간이 다름. ${room.currentTime.toFixed(2)}s -> ${stateChange.currentTime.toFixed(2)}s`);
+      } else {
+        return; // 상태도 같고 시간도 유사하면 무시
+      }
+    }
+
+    console.log(`[상태 변경] 룸(${roomId})에서 ${currentUser.name}님이 플레이어 상태를 변경: ${stateChange.playing ? '재생' : '일시정지'}, 시간: ${stateChange.currentTime.toFixed(2)}s`);
+
+    // 이전 상태 임시 저장 (이벤트 로그 표시용)
+    const previousState = room.isPlaying;
+    
+    // 룸의 재생 상태 업데이트
+    room.isPlaying = stateChange.playing;
+    room.currentTime = stateChange.currentTime;
+    room.lastSyncTime = Date.now();
+
+    // 상태 변경을 방의 다른 참가자들에게 발송 - 중요: 상태 변경이 있는 경우에만 이벤트 발송
+    socket.to(roomId).emit("player:stateChange", {
+      isPlaying: stateChange.playing,
+      currentTime: stateChange.currentTime
+    });
+
+    // 상태가 실제로 변경되었을 때만 이벤트 로그 생성
+    if (previousState !== stateChange.playing) {
+      const eventType = stateChange.playing ? "play" : "pause";
+      createEventLog(roomId, currentUser, eventType);
+    }
+  });
 
   // Handle autoplay toggle
   socket.on("autoplay:toggle", (data: { isPlaying: boolean; currentTime: number; autoplay: boolean }) => {
-    // Update room state
-    room.autoplay = !data.autoplay // Toggle autoplay state
-
-    // Broadcast to other users
-    socket.to(roomId).emit("autoplay:toggle", {
-      autoplay: room.autoplay
-    })
+    if (!room) return;
+    
+    // 자동 재생 설정 업데이트
+    room.autoplay = data.autoplay;
+    room.isPlaying = data.isPlaying;
+    room.currentTime = data.currentTime;
+    
+    // 다른 참가자들에게 전파
+    socket.to(roomId).emit("autoplay:toggle", data);
+    
+    // 이벤트 로그 생성
+    const user = room.users.find(u => u.id === userId);
+    if (user) {
+      createEventLog(
+        roomId, 
+        user, 
+        'autoplayToggle',
+        { autoplay: data.autoplay }
+      );
+    }
   })
 
   // Handle video change
   socket.on("video:change", (videoId: string) => {
-    // Find the video in the playlist
-    const video = room.playlist.find((v: VideoItem) => v.id === videoId)
-
+    if (!room) return;
+    
+    // 새 비디오 찾기
+    const video = room.playlist.find((v) => v.videoId === videoId);
+    
     if (video) {
-      // Update room state
-      room.currentVideo = video
-      room.currentTime = 0
-      room.isPlaying = true
-
-      // Broadcast to other users
-      socket.to(roomId).emit("video:change", {
-        videoId: video.videoId,
-        currentTime: 0,
-      })
+      // 현재 비디오 업데이트
+      room.currentVideo = video;
+      room.currentTime = 0;
+      room.isPlaying = true;
+      room.lastSyncTime = Date.now(); // 최종 동기화 시간 업데이트
+      
+      // 다른 모든 참가자들에게 전파
+      io.to(roomId).emit("video:change", videoId);
+      
+      // 이벤트 로그 생성
+      const user = room.users.find(u => u.id === userId);
+      if (user) {
+        createEventLog(
+          roomId, 
+          user, 
+          'videoChange',
+          { videoId, videoTitle: video.title }
+        );
+      }
     }
   })
 
   // Handle playlist update
   socket.on("playlist:update", (playlist: VideoItem[]) => {
-    // Update room state
-    room.playlist = playlist
-
-    // Broadcast to other users
-    socket.to(roomId).emit("playlist:update", playlist)
+    if (!room) return;
+    
+    // 재생목록 업데이트
+    room.playlist = playlist;
+    
+    // 다른 모든 참가자들에게 전파
+    socket.to(roomId).emit("playlist:update", playlist);
+    
+    // 이벤트 로그 생성
+    const user = room.users.find(u => u.id === userId);
+    if (user) {
+      createEventLog(
+        roomId, 
+        user, 
+        'playlistReorder'
+      );
+    }
   })
 
   // Handle adding a video to playlist
   socket.on("playlist:add", (video: VideoItem) => {
-    // Add video to playlist if it doesn't exist
-    if (!room.playlist.some((v: VideoItem) => v.id === video.id)) {
-      room.playlist.push(video)
-    }
-
-    // If no video is currently playing, set this as current
+    if (!room) return;
+    
+    // 재생목록에 비디오 추가
+    room.playlist.push(video);
+    
+    // 현재 재생 중인 비디오가 없는 경우, 새 비디오를 현재 비디오로 설정
     if (!room.currentVideo) {
-      room.currentVideo = video
-      room.currentTime = 0
-      room.isPlaying = true
-      
-      // Notify all users about the video change
-      io.to(roomId).emit("video:change", {
-        videoId: video.videoId,
-        currentTime: 0,
-      })
+      room.currentVideo = video;
+      room.isPlaying = room.autoplay;
+      room.currentTime = 0;
     }
-
-    // Broadcast updated playlist to all users
-    io.to(roomId).emit("playlist:update", room.playlist)
+    
+    // 다른 모든 참가자들에게 전파
+    io.to(roomId).emit("playlist:update", room.playlist);
+    
+    // 이벤트 로그 생성
+    const user = room.users.find(u => u.id === userId);
+    if (user) {
+      createEventLog(
+        roomId, 
+        user, 
+        'playlistAdd',
+        { videoId: video.videoId, videoTitle: video.title }
+      );
+    }
   })
 
   // Handle removing a video from playlist
   socket.on("playlist:remove", (videoId: string) => {
-    // Remove video from playlist
-    room.playlist = room.playlist.filter((v: VideoItem) => v.id !== videoId)
-
-    // If current video was removed, set next video as current
-    if (room.currentVideo && room.currentVideo.id === videoId) {
-      room.currentVideo = room.playlist.length > 0 ? room.playlist[0] : null
-      room.currentTime = 0
-      room.isPlaying = false
-
-      // Notify all users about the video change
-      if (room.currentVideo) {
-        io.to(roomId).emit("video:change", {
-          videoId: room.currentVideo.videoId,
-          currentTime: 0,
-        })
+    if (!room) return;
+    
+    // 재생목록에서 제거할 비디오 찾기
+    const videoIndex = room.playlist.findIndex((v) => v.videoId === videoId);
+    
+    if (videoIndex !== -1) {
+      const removedVideo = room.playlist[videoIndex];
+      
+      // 재생목록에서 비디오 제거
+      room.playlist.splice(videoIndex, 1);
+      
+      // 현재 재생 중인 비디오가 제거된 경우, 다음 비디오를 재생
+      if (room.currentVideo && room.currentVideo.videoId === videoId) {
+        if (room.playlist.length > 0) {
+          // 다음 비디오 선택
+          room.currentVideo = room.playlist[0];
+          room.currentTime = 0;
+          
+          // 변경된 비디오 정보 전파
+          io.to(roomId).emit("video:change", room.currentVideo.videoId);
+        } else {
+          // 재생목록이 비어있으면 현재 비디오 제거
+          room.currentVideo = null;
+          room.isPlaying = false;
+        }
+      }
+      
+      // 업데이트된 재생목록 전파
+      io.to(roomId).emit("playlist:update", room.playlist);
+      
+      // 이벤트 로그 생성
+      const user = room.users.find(u => u.id === userId);
+      if (user) {
+        createEventLog(
+          roomId, 
+          user, 
+          'playlistRemove',
+          { videoId, videoTitle: removedVideo.title }
+        );
       }
     }
-
-    // Broadcast updated playlist to all users
-    io.to(roomId).emit("playlist:update", room.playlist)
   })
 
   // Handle chat message
@@ -544,36 +699,63 @@ io.on("connection", (socket) => {
 
   // Handle room settings update
   socket.on("room:update", (settings: Partial<RoomState>) => {
-    // Only allow host to update room settings
-    if (userId === room.hostId) {
-      // 만약 룸 이름이 변경되었다면, 매핑도 업데이트
-      if (settings.roomName && settings.roomName !== room.roomName) {
-        // 새 이름이 이미 사용중인지 확인
-        if (isRoomNameTaken(settings.roomName)) {
-          // 같은 방의 이름 변경인 경우는 허용 (대소문자만 변경 등)
-          const existingRoom = findRoomByName(settings.roomName)
-          if (existingRoom && existingRoom.roomId !== roomId) {
-            // 다른 방이 이미 해당 이름을 사용 중이므로 이름 변경 거부
-            socket.emit("room:update:error", {
-              message: "Room name already taken"
-            })
-            return
-          }
+    if (!room) return;
+    
+    // 호스트 변경 - 로그 추가
+    if (settings.hostId && settings.hostId !== room.hostId) {
+      const oldHostId = room.hostId;
+      
+      // 현재 호스트가 변경을 요청했는지 확인
+      if (userId === oldHostId) {
+        // 호스트 변경
+        room.hostId = settings.hostId;
+        
+        // 새 호스트 찾기
+        const newHost = room.users.find(u => u.id === settings.hostId);
+        
+        if (newHost) {
+          // 이벤트 로그 생성
+          createEventLog(
+            roomId, 
+            newHost, 
+            'hostChange'
+          );
         }
         
-        // 기존 이름 매핑 제거
-        roomsByName.delete(room.roomName.toLowerCase())
-        
-        // 새 이름 매핑 추가
-        roomsByName.set(settings.roomName.toLowerCase(), roomId)
+        // 다른 모든 참가자들에게 전파
+        io.to(roomId).emit("room:hostChange", {
+          hostId: settings.hostId
+        });
+      }
+    }
+    
+    // 만약 룸 이름이 변경되었다면, 매핑도 업데이트
+    if (settings.roomName && settings.roomName !== room.roomName) {
+      // 새 이름이 이미 사용중인지 확인
+      if (isRoomNameTaken(settings.roomName)) {
+        // 같은 방의 이름 변경인 경우는 허용 (대소문자만 변경 등)
+        const existingRoom = findRoomByName(settings.roomName)
+        if (existingRoom && existingRoom.roomId !== roomId) {
+          // 다른 방이 이미 해당 이름을 사용 중이므로 이름 변경 거부
+          socket.emit("room:update:error", {
+            message: "Room name already taken"
+          })
+          return
+        }
       }
       
-      // Update room settings
-      Object.assign(room, settings)
-
-      // Broadcast updated room state to all users
-      io.to(roomId).emit("room:state", room)
+      // 기존 이름 매핑 제거
+      roomsByName.delete(room.roomName.toLowerCase())
+      
+      // 새 이름 매핑 추가
+      roomsByName.set(settings.roomName.toLowerCase(), roomId)
     }
+    
+    // Update room settings
+    Object.assign(room, settings)
+
+    // Broadcast updated room state to all users
+    io.to(roomId).emit("room:state", room)
   })
 
   // Handle disconnect
@@ -624,6 +806,70 @@ io.on("connection", (socket) => {
       })
     }
   })
+
+  // 시크 이벤트 (시간 이동) 추가
+  socket.on("player:seek", (data: { currentTime: number }) => {
+    if (!room) return;
+    
+    // 방의 현재 시간 업데이트
+    room.currentTime = data.currentTime;
+    room.lastSyncTime = Date.now(); // 최종 동기화 시간 업데이트
+    
+    // 다른 참가자들에게 전파
+    socket.to(roomId).emit("player:seek", data);
+    
+    // 이벤트 로그 생성
+    const user = room.users.find(u => u.id === userId);
+    if (user) {
+      createEventLog(
+        roomId, 
+        user, 
+        'seek',
+        { time: data.currentTime }
+      );
+    }
+  });
+
+  // 비디오 제어 권한 설정 변경 이벤트 핸들러 추가
+  socket.on("video:controlPermission", (permission: 'host-only' | 'all-users') => {
+    if (!room) return;
+    
+    // 호스트만 권한을 변경할 수 있음
+    if (userId !== room.hostId) {
+      console.log(`[권한 오류] 호스트가 아닌 사용자(${socket.id})가 제어 권한을 변경하려고 시도했습니다.`);
+      return;
+    }
+    
+    // 이전 권한 저장
+    const previousPermission = room.videoControlPermission;
+    
+    // 권한 업데이트
+    room.videoControlPermission = permission;
+    
+    console.log(`[제어 권한 변경] 룸(${roomId})의 비디오 제어 권한이 변경되었습니다: ${previousPermission} → ${permission}`);
+    
+    // 모든 참가자에게 권한 변경 알림
+    io.to(roomId).emit("video:controlPermission", {
+      permission: permission
+    });
+    
+    // 권한이 변경된 경우 이벤트 로그 생성
+    if (previousPermission !== permission) {
+      // 사용자 정보 가져오기
+      const user = room.users.find(u => u.id === userId);
+      if (user) {
+        createEventLog(
+          roomId,
+          user,
+          'hostChange', // 기존 이벤트 타입 재사용 (또는 원하는 경우 새로운 이벤트 타입 추가)
+          { 
+            videoControlPermission: permission,
+            note: permission === 'host-only' ? '방장만 영상 제어 가능' : '모든 사용자 영상 제어 가능'
+          }
+        );
+      }
+    }
+  });
 })
 
 // Start server with port fallback mechanism
@@ -654,3 +900,70 @@ function startServer(port: number, attempts = 0) {
 }
 
 startServer(currentPort);
+
+/**
+ * Generate a unique ID
+ */
+function generateId() {
+  return Math.random().toString(36).substring(2, 9)
+}
+
+/**
+ * 이벤트 로그를 생성하고 Room의 eventLogs에 추가하는 함수
+ * @param roomId - 이벤트가 발생한 방 ID
+ * @param user - 이벤트를 발생시킨 사용자
+ * @param eventType - 이벤트 타입
+ * @param details - 이벤트 상세 정보
+ */
+function createEventLog(roomId: string, user: RoomUser, eventType: EventLog['eventType'], details?: EventLog['details']) {
+  const room = rooms.get(roomId);
+  if (!room) return;
+
+  // 로그 생성을 위한 사용자 정보 확인
+  console.log(`[이벤트 로그 생성] 방 ${roomId}, 이벤트: ${eventType}, 사용자: ${user.name} (ID: ${user.id}), 호스트: ${user.isHost ? "예" : "아니오"}`);
+
+  // 시간을 포함한 이벤트 로그 생성
+  const eventLogTime = Date.now();
+  
+  const eventLog: EventLog = {
+    id: generateId(),
+    user,
+    eventType,
+    details,
+    timestamp: eventLogTime
+  };
+  
+  // 이벤트 로그를 룸 상태에 추가
+  room.eventLogs.push(eventLog);
+  
+  // 이벤트 유형에 따라 다른 로그 메시지 출력
+  let logMessage = "";
+  switch(eventType) {
+    case 'play':
+      logMessage = `${user.name}님이 영상을 재생했습니다.`;
+      break;
+    case 'pause':
+      logMessage = `${user.name}님이 영상을 일시정지했습니다.`;
+      break;
+    case 'seek':
+      logMessage = `${user.name}님이 ${details?.time || 0}초로 영상을 이동했습니다.`;
+      break;
+    case 'videoChange':
+      logMessage = `${user.name}님이 "${details?.videoTitle || ''}"(으)로 영상을 변경했습니다.`;
+      break;
+    default:
+      logMessage = `${user.name}님이 ${eventType} 이벤트를 발생시켰습니다.`;
+  }
+  
+  console.log(`[이벤트 로그 전송] ${logMessage} (timestamp: ${new Date(eventLogTime).toISOString()})`);
+  
+  // 방에 있는 모든 사용자에게 이벤트 로그 전파
+  io.to(roomId).emit("room:eventLog", eventLog);
+  
+  // 최대 100개의 로그만 유지 (성능 최적화)
+  if (room.eventLogs.length > 100) {
+    room.eventLogs = room.eventLogs.slice(-100);
+  }
+  
+  return eventLog;
+}
