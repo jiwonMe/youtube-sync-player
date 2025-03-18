@@ -15,10 +15,12 @@ const nextConfig = {
   },
   images: {
     unoptimized: true,
+    domains: ['i.ytimg.com', 'img.youtube.com', 'yt3.ggpht.com', 'yt3.googleusercontent.com'],
   },
   // Disable experimental features that might cause issues
   experimental: {
-    appDir: true
+    appDir: true,
+    serverComponentsExternalPackages: ['@clerk/clerk-sdk-node'],
   },
   output: 'standalone',
   // Clerk configuration

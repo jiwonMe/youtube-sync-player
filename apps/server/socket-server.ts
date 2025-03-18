@@ -325,9 +325,32 @@ io.on("connection", (socket) => {
   })
 })
 
-// Start server
-const PORT = process.env.PORT || 3003
-httpServer.listen(PORT, () => {
-  console.log(`Socket server running on port ${PORT}`)
-})
+// Start server with port fallback mechanism
+const PORT = parseInt(process.env.PORT || '3003', 10);
+let currentPort = PORT;
+const MAX_PORT_ATTEMPTS = 10;
+
+function startServer(port: number, attempts = 0) {
+  if (attempts >= MAX_PORT_ATTEMPTS) {
+    console.error(`Failed to start server after ${MAX_PORT_ATTEMPTS} attempts`);
+    process.exit(1);
+    return;
+  }
+
+  httpServer.listen(port)
+    .on('listening', () => {
+      console.log(`Socket server running on port ${port}`);
+    })
+    .on('error', (err: NodeJS.ErrnoException) => {
+      if (err.code === 'EADDRINUSE') {
+        console.warn(`Port ${port} is in use, trying ${port + 1} instead.`);
+        startServer(port + 1, attempts + 1);
+      } else {
+        console.error('Socket server error:', err);
+        process.exit(1);
+      }
+    });
+}
+
+startServer(currentPort);
 
