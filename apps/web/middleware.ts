@@ -30,20 +30,18 @@ export default clerkMiddleware((auth, req) => {
     return NextResponse.next();
   }
 
-  // /api/youtube/token 경로는 인증 필요
-  if (req.nextUrl.pathname.startsWith("/api/youtube/token")) {
+
+  if (req.nextUrl.pathname.startsWith("/api")) {
     try {
-      // auth.protect() 사용
-      const authState = auth.protect();
+      auth.protect();
       return NextResponse.next();
     } catch (error) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
   }
 
-  // 그 외 인증이 필요한 경로는 보호
   try {
-    const authState = auth.protect();
+    auth.protect();
     return NextResponse.next();
   } catch (error) {
     return NextResponse.redirect(new URL("/sign-in", req.url));

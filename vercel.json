@@ -6,10 +6,7 @@
       "use": "@vercel/next"
     }
   ],
-  "routes": [
-    { "src": "/(.*)", "dest": "apps/web/$1" }
-  ],
   "buildCommand": "pnpm turbo run build --filter=web",
   "installCommand": "pnpm install",
   "outputDirectory": "apps/web/.next"
-} 
+}

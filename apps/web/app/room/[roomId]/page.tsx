@@ -6,7 +6,7 @@ import RoomClient from "@/components/room-client"
  * Room 페이지 props 타입 정의
  */
 interface RoomPageProps {
-  params: { roomId: string }
+  params: Promise<{ roomId: string }> | { roomId: string }
 }
 
 /**
@@ -14,8 +14,8 @@ interface RoomPageProps {
  * 
  * @param params - URL에서 추출된 roomId 매개변수
  */
-export default function RoomPage({ params }: RoomPageProps) {
-  const { roomId } = params
+export default async function RoomPage({ params }: RoomPageProps) {
+  const { roomId } = await params
   
   return (
     <Suspense fallback={<RoomSkeleton />}>
