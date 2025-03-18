@@ -6,8 +6,7 @@ dockerfilePath = "apps/server/Dockerfile"
 startCommand = "node apps/server/dist/socket-server.js"
 healthcheckPath = "/health"
 healthcheckTimeout = 300
-restartPolicyType = "on-failure"
-restartPolicyMaxRetries = 10
+restartPolicy = "on-failure"
 
 [environments]
   [environments.production]
