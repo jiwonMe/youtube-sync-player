@@ -3,6 +3,7 @@
 import { Plus, LogIn, Youtube } from "lucide-react"
 import Link from "next/link"
 import { useState, useEffect } from "react"
+import { useTrackEvent } from "@/hooks/use-track-event"
 
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -15,10 +16,24 @@ export function CTASection() {
   const [isHovered, setIsHovered] = useState(false)
   const [isMounted, setIsMounted] = useState(false)
   
+  // Mixpanel 이벤트 추적 초기화
+  const analytics = useTrackEvent('HomeCTA')
+  
   // 클라이언트 사이드에서만 마운트 상태 업데이트
   useEffect(() => {
     setIsMounted(true)
-  }, [])
+    
+    // CTA 섹션 노출 이벤트 추적
+    analytics.trackFeatureUsed('cta_section_viewed')
+  }, [analytics])
+  
+  // 히어로 섹션으로 스크롤 처리
+  const handleScrollToHero = () => {
+    document.getElementById('hero-section')?.scrollIntoView({ behavior: 'smooth' })
+    
+    // CTA 방 생성 버튼 클릭 이벤트 추적
+    analytics.trackButtonClick('cta_create_room')
+  }
   
   return (
     <section className="w-full py-16 md:py-24 lg:py-32 bg-gradient-to-b from-background to-red-500/5 relative overflow-hidden">
@@ -57,7 +72,7 @@ export function CTASection() {
             </p>
             <div className="flex flex-col sm:flex-row gap-4 pt-4">
               <Button 
-                onClick={() => document.getElementById('hero-section')?.scrollIntoView({ behavior: 'smooth' })}
+                onClick={handleScrollToHero}
                 size="lg" 
                 className="gap-2 bg-gradient-to-r from-red-500 to-red-600 shadow-lg shadow-red-500/20 hover:shadow-red-500/30 border-none transition-all duration-300 hover:-translate-y-1 group"
               >
@@ -70,7 +85,10 @@ export function CTASection() {
                 asChild
                 className="gap-2 border-red-500/20 shadow-md hover:bg-red-500/5 transition-all duration-300 hover:-translate-y-1 group"
               >
-                <Link href="/join-room">
+                <Link 
+                  href="/join-room"
+                  onClick={() => analytics.trackButtonClick('cta_join_room')}
+                >
                   <LogIn className="h-5 w-5 transition-transform duration-300 group-hover:translate-x-1" />
                   Join Existing Room
                 </Link>
@@ -80,7 +98,10 @@ export function CTASection() {
           <div className="md:w-1/2 flex justify-center md:justify-end">
             <div 
               className="relative w-full max-w-sm aspect-video rounded-lg overflow-hidden shadow-xl shadow-red-500/10 transition-all duration-500"
-              onMouseEnter={() => setIsHovered(true)}
+              onMouseEnter={() => {
+                setIsHovered(true)
+                analytics.trackFeatureUsed('cta_illustration_hovered')
+              }}
               onMouseLeave={() => setIsHovered(false)}
             >
               <div className={cn(

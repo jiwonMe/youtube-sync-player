@@ -9,6 +9,8 @@ import { useForm } from "react-hook-form"
 import * as z from "zod"
 import { Music, Lock, Users, ArrowLeft, Youtube, PlusCircle } from "lucide-react"
 import { useToast } from "@/components/ui/use-toast"
+import { useTrackEvent } from "@/hooks/use-track-event"
+import { Events } from "@/lib/mixpanel"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
@@ -81,13 +83,22 @@ function CreateRoomSection() {
   const [isMounted, setIsMounted] = useState(false)
   const [isButtonHovered, setIsButtonHovered] = useState(false)
   
+  // Mixpanel 이벤트 추적 초기화
+  const analytics = useTrackEvent('CreateRoom')
+  
   // URL에서 방 이름 파라미터 가져오기
   const nameFromUrl = searchParams.get('name')
 
   // 클라이언트 사이드에서만 마운트 상태 업데이트
   useEffect(() => {
     setIsMounted(true)
-  }, [])
+    
+    // 페이지 접속 이벤트 추적
+    analytics.trackFeatureUsed('create_room_page_viewed', {
+      withNameParam: !!nameFromUrl,
+      isAuthenticated: !!isSignedIn
+    })
+  }, [isSignedIn, nameFromUrl, analytics])
 
   // Initialize form
   const form = useForm<z.infer<typeof formSchema>>({
@@ -109,6 +120,15 @@ function CreateRoomSection() {
 
   // Handle form submission
   async function onSubmit(values: z.infer<typeof formSchema>) {
+    // 방 생성 시도 이벤트 추적
+    analytics.trackFeatureUsed('room_creation_attempted', {
+      hasDescription: !!values.description?.trim(),
+      isPasswordProtected: values.isPasswordProtected,
+      hasPlaylist: !!selectedPlaylist,
+      playlistSize: selectedPlaylist?.videos?.length || 0,
+      isAuthenticated: !!isSignedIn
+    })
+    
     console.log('🎵 선택된 플레이리스트:', selectedPlaylist?.videos?.map(video => ({
       id: video.id,
       videoId: video.videoId,
@@ -126,6 +146,11 @@ function CreateRoomSection() {
       const checkData = await checkResponse.json();
       
       if (checkData.isTaken) {
+        // 방 이름 중복 발생 이벤트 추적
+        analytics.trackError('room_name_already_taken', {
+          roomName: values.roomName
+        })
+        
         toast({
           title: "Room name already taken",
           description: "Please choose a different room name.",
@@ -164,18 +189,60 @@ function CreateRoomSection() {
       }
 
       const data = await response.json();
+      
+      // 방 생성 성공 이벤트 추적
+      analytics.track(Events.ROOM_CREATED, {
+        roomId: data.roomId,
+        roomName: values.roomName,
+        isPasswordProtected: values.isPasswordProtected,
+        hasDescription: !!values.description?.trim(),
+        hasPlaylist: !!selectedPlaylist,
+        playlistSize: selectedPlaylist?.videos?.length || 0,
+        isAuthenticated: !!isSignedIn
+      })
+      
       router.push(`/room/${data.roomId}`);
     } catch (error) {
+      // 방 생성 오류 이벤트 추적
+      analytics.trackError('room_creation_failed', {
+        error: error instanceof Error ? error.message : String(error),
+        roomName: values.roomName
+      })
+      
       console.error("Failed to create room:", error);
+      
+      toast({
+        title: "Failed to create room",
+        description: "Please try again later.",
+        variant: "destructive",
+      });
     }
   }
 
   const handlePlaylistSelect = (playlist: Playlist) => {
     setSelectedPlaylist(playlist)
+    
+    // 플레이리스트 선택 이벤트 추적
+    analytics.trackFeatureUsed('playlist_selected', {
+      playlistId: playlist.id,
+      playlistTitle: playlist.title,
+      videoCount: playlist.videos?.length || 0
+    })
+    
     // Optionally set the room name based on playlist title if empty
     if (!form.getValues().roomName) {
       form.setValue("roomName", playlist.title)
     }
+  }
+  
+  // 비밀번호 토글 이벤트 추적
+  const handlePasswordToggle = (checked: boolean) => {
+    setIsPasswordProtected(checked)
+    form.setValue("isPasswordProtected", checked)
+    
+    analytics.trackFeatureUsed('password_protection_toggled', {
+      isEnabled: checked
+    })
   }
 
   return (
@@ -184,7 +251,13 @@ function CreateRoomSection() {
         <Card className="border border-border/40 bg-card/95 backdrop-blur-sm shadow-lg animate-slide-up">
           <CardHeader>
             <div className="flex items-center mb-2">
-              <Button variant="ghost" size="icon" asChild className="mr-2">
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                asChild 
+                className="mr-2"
+                onClick={() => analytics.trackButtonClick('back_to_home')}
+              >
                 <Link href="/">
                   <ArrowLeft className="h-4 w-4" />
                 </Link>
@@ -199,7 +272,11 @@ function CreateRoomSection() {
                 <AlertDescription className="flex items-center">
                   <Youtube className="h-4 w-4 text-red-600 mr-2" />
                   <span>
-                    <Link href="/sign-in" className="underline font-semibold text-primary">
+                    <Link 
+                      href="/sign-in" 
+                      className="underline font-semibold text-primary"
+                      onClick={() => analytics.trackButtonClick('sign_in_from_create_room')}
+                    >
                       Sign in with Google
                     </Link>{" "}
                     to access your YouTube playlists.
@@ -223,6 +300,14 @@ function CreateRoomSection() {
                             placeholder="My Awesome Room" 
                             {...field} 
                             className="border-border/50 focus:border-red-500/50"
+                            onChange={(e) => {
+                              field.onChange(e)
+                              if (e.target.value.length >= 3) {
+                                analytics.trackFeatureUsed('room_name_entered', {
+                                  length: e.target.value.length
+                                })
+                              }
+                            }}
                           />
                         </div>
                       </FormControl>
@@ -243,6 +328,12 @@ function CreateRoomSection() {
                           placeholder="What kind of videos will you be watching?"
                           className="resize-none border-border/50 focus:border-red-500/50"
                           {...field}
+                          onChange={(e) => {
+                            field.onChange(e)
+                            if (e.target.value.length > 0) {
+                              analytics.trackFeatureUsed('description_entered')
+                            }
+                          }}
                         />
                       </FormControl>
                       <FormMessage />
@@ -250,82 +341,25 @@ function CreateRoomSection() {
                   )}
                 />
 
-                <div className="space-y-4">
-                  <Separator className="bg-border/50" />
-                  <div className={cn(
-                    isMounted ? "opacity-100" : "opacity-90",
-                    "transition-opacity duration-300"
-                  )}>
-                    <PlaylistSelector onSelect={handlePlaylistSelect} />
-                  </div>
-                  {selectedPlaylist && (
-                    <div className={cn(
-                      "space-y-3 animate-fade-in",
-                      isMounted ? "opacity-100" : "opacity-90"
-                    )}>
-                      <div className="text-sm text-muted-foreground">
-                        Selected: <span className="font-medium text-red-500">{selectedPlaylist.title}</span>
-                      </div>
-                      {selectedPlaylist.videos && selectedPlaylist.videos.length > 0 && (
-                        <div className="mt-2 border border-border/50 rounded-md overflow-hidden shadow-sm">
-                          <div className="p-2 border-b bg-muted/30 backdrop-blur-sm flex items-center">
-                            <Youtube className="h-3.5 w-3.5 text-red-500 mr-2" />
-                            <span className="text-sm font-medium">
-                              {selectedPlaylist.videos.length} {selectedPlaylist.videos.length === 1 ? "video" : "videos"} in playlist
-                            </span>
-                          </div>
-                          <ScrollArea className="h-[200px]">
-                            <div className="p-2">
-                              {selectedPlaylist.videos.map((video) => (
-                                <div 
-                                  key={video.id} 
-                                  className="flex p-2 mb-2 hover:bg-red-500/5 rounded-md transition-colors"
-                                >
-                                  <div className="relative w-24 h-14 rounded overflow-hidden flex-shrink-0 shadow-sm">
-                                    <img
-                                      src={video.thumbnailUrl || "/placeholder.svg"}
-                                      alt={video.title}
-                                      className="object-cover w-full h-full"
-                                    />
-                                  </div>
-                                  <div className="flex-1 min-w-0 ml-3">
-                                    <h4 className="font-medium text-sm line-clamp-2">{video.title}</h4>
-                                    <div className="flex items-center mt-1">
-                                      <Youtube className="h-3 w-3 text-red-600 mr-1" />
-                                      <span className="text-xs text-muted-foreground">YouTube</span>
-                                    </div>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </ScrollArea>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  <Separator className="bg-border/50" />
-                </div>
-
                 <FormField
                   control={form.control}
                   name="isPasswordProtected"
                   render={({ field }) => (
-                    <FormItem className="flex flex-row items-center justify-between rounded-lg border border-border/50 p-4 hover:border-red-500/20 transition-colors duration-200">
+                    <FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm">
                       <div className="space-y-0.5">
-                        <FormLabel className="text-base flex items-center">
-                          <Lock className="h-4 w-4 mr-2 text-red-500" />
+                        <FormLabel className="flex items-center">
+                          <Lock className="h-4 w-4 text-red-500 mr-2" />
                           Password Protection
                         </FormLabel>
-                        <FormDescription>Require a password to join this room.</FormDescription>
+                        <FormDescription>Protect your room with a password.</FormDescription>
                       </div>
                       <FormControl>
                         <Switch
                           checked={field.value}
                           onCheckedChange={(checked) => {
                             field.onChange(checked)
-                            setIsPasswordProtected(checked)
+                            handlePasswordToggle(checked)
                           }}
-                          className="data-[state=checked]:bg-red-500"
                         />
                       </FormControl>
                     </FormItem>
@@ -337,14 +371,22 @@ function CreateRoomSection() {
                     control={form.control}
                     name="password"
                     render={({ field }) => (
-                      <FormItem className="animate-fade-in">
-                        <FormLabel>Room Password</FormLabel>
+                      <FormItem>
+                        <FormLabel>Password</FormLabel>
                         <FormControl>
-                          <Input 
-                            type="password" 
-                            placeholder="Enter password" 
-                            {...field} 
+                          <Input
+                            type="password"
+                            placeholder="Enter room password"
                             className="border-border/50 focus:border-red-500/50"
+                            {...field}
+                            onChange={(e) => {
+                              field.onChange(e)
+                              if (e.target.value.length > 0) {
+                                analytics.trackFeatureUsed('password_entered', {
+                                  length: e.target.value.length
+                                })
+                              }
+                            }}
                           />
                         </FormControl>
                         <FormMessage />
@@ -353,62 +395,98 @@ function CreateRoomSection() {
                   />
                 )}
 
-                <div className="pt-2">
-                  <Button 
-                    type="submit" 
+                <div>
+                  {isSignedIn ? (
+                    <div className="space-y-4">
+                      <h3 className="text-base font-medium flex items-center">
+                        <PlusCircle className="h-4 w-4 text-red-500 mr-2" />
+                        Add videos from your playlists (Optional)
+                      </h3>
+                      <div className="bg-muted/50 rounded-md p-4 h-[300px] overflow-hidden relative border">
+                        <PlaylistSelector onSelect={handlePlaylistSelect} />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="p-4 border border-dashed rounded-md bg-muted/20 text-center space-y-2">
+                      <p className="text-sm text-muted-foreground">Sign in to add videos from your playlists</p>
+                    </div>
+                  )}
+
+                  {selectedPlaylist && (
+                    <div className="mt-4 p-3 border rounded-md bg-accent/20">
+                      <h4 className="text-sm font-medium mb-2 flex items-center">
+                        <Music className="h-3.5 w-3.5 text-red-500 mr-1.5" />
+                        Selected Playlist
+                      </h4>
+                      <div className="flex items-center">
+                        <div className="w-10 h-10 rounded overflow-hidden mr-3 flex-shrink-0">
+                          <img
+                            src={selectedPlaylist.thumbnails.medium.url || selectedPlaylist.thumbnails.default.url}
+                            alt={selectedPlaylist.title}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                        <div className="overflow-hidden">
+                          <p className="font-medium text-sm truncate">{selectedPlaylist.title}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {selectedPlaylist.videos ? `${selectedPlaylist.videos.length} videos` : "Loading videos..."}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div className="pt-4">
+                  <Button
+                    type="submit"
                     className={cn(
-                      "w-full gap-2 bg-gradient-to-r from-red-500 to-red-600 shadow-lg shadow-red-500/20 hover:shadow-red-500/30 border-none transition-all duration-300 hover:-translate-y-1 group",
-                      isMounted ? "opacity-100" : "opacity-90"
+                      "w-full relative overflow-hidden transition-all bg-gradient-to-r",
+                      isButtonHovered
+                        ? "from-red-600 to-red-500 shadow-lg shadow-red-500/20 scale-[1.01]"
+                        : "from-red-500 to-red-600"
                     )}
                     onMouseEnter={() => setIsButtonHovered(true)}
                     onMouseLeave={() => setIsButtonHovered(false)}
-                    disabled={form.formState.isSubmitting}
+                    data-umami-event="create-room-button"
                   >
-                    <PlusCircle className={cn(
-                      "h-4 w-4 transition-transform duration-300",
-                      isButtonHovered && "rotate-90"
-                    )} />
-                    <span className="relative inline-block">
-                      Create Room
-                      {isMounted && (
-                        <span className={cn(
-                          "absolute -bottom-1 left-0 w-0 h-0.5 bg-white/30",
-                          isButtonHovered && "w-full transition-all duration-300"
-                        )}></span>
-                      )}
-                    </span>
+                    <span className="relative z-10">Create Room</span>
+                    {isButtonHovered && (
+                      <Wave
+                        className="absolute inset-0 z-0"
+                        color="rgba(255,255,255,0.1)"
+                      />
+                    )}
                   </Button>
                 </div>
               </form>
             </Form>
           </CardContent>
-          <CardFooter className="flex justify-center text-sm text-muted-foreground">
-            <div className="text-center">
-              Already have a room ID?{" "}
-              <Link href="/join-room" className="text-red-500 hover:underline font-medium transition-colors">
-                Join a room
-              </Link>
-            </div>
+          <CardFooter className="flex flex-col items-center pt-0 border-t">
+            <p className="text-xs text-muted-foreground mt-3 flex items-center">
+              <Users className="h-3 w-3 mr-1" />
+              No account required for your friends to join
+            </p>
           </CardFooter>
         </Card>
       </div>
-      
-      {/* Background animation */}
-      {isMounted && (
-        <Wave fadeIn={false} opacity={5} />
-      )}
     </section>
   )
 }
 
 /**
  * CreateRoomPage 컴포넌트
- * 룸 생성 페이지
+ * 방 생성 페이지의 메인 컴포넌트
  */
 export default function CreateRoomPage() {
   return (
-    <div className="flex flex-col min-h-screen bg-gradient-to-b from-background via-background to-background/95">
-      <Suspense fallback={<div className="flex justify-center items-center h-screen">Loading...</div>}>
+    <div className="min-h-screen relative overflow-hidden">
+      {/* Background decoration */}
+      <div className="absolute top-[-10%] right-[-5%] w-[500px] h-[500px] bg-red-500/10 rounded-full blur-3xl opacity-50 animate-blob animation-delay-2000" />
+      <div className="absolute bottom-[-10%] left-[-10%] w-[500px] h-[500px] bg-red-700/10 rounded-full blur-3xl opacity-50 animate-blob animation-delay-4000" />
+      <div className="absolute top-[5%] left-[30%] w-[500px] h-[500px] bg-red-600/5 rounded-full blur-3xl opacity-50 animate-blob animation-delay-3000" />
+      
+      <Suspense fallback={<div className="flex items-center justify-center min-h-screen">Loading...</div>}>
         <CreateRoomSection />
       </Suspense>
     </div>

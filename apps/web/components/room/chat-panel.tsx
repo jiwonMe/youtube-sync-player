@@ -10,6 +10,8 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Clock, Play, Pause, SkipForward, Film, UserPlus, UserMinus, Crown, PlayCircle, AlertCircle, MessageSquare, Send, Smile } from "lucide-react"
 import { formatTimestamp, formatTime as formatVideoTime } from "../../utils/room-utils"
 import { ChatMessage, EventLog } from "@/types/room"
+import { useTrackEvent } from "@/hooks/use-track-event"
+import { Events } from "@/lib/mixpanel"
 
 /**
  * 채팅 패널 컴포넌트 Props
@@ -104,6 +106,9 @@ export function ChatPanel({
   isLoading,
   chatEndRef,
 }: ChatPanelProps) {
+  // Mixpanel 이벤트 추적 초기화
+  const analytics = useTrackEvent('ChatPanel')
+  
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [unreadCount, setUnreadCount] = useState(0);
   
@@ -147,16 +152,57 @@ export function ChatPanel({
   useEffect(() => {
     if (!isAtBottom && (messages.length > 0 || eventLogs.length > 0)) {
       setUnreadCount(prev => prev + 1);
+      // 사용자가 스크롤하지 않은 상태에서 새 메시지가 왔을 때 이벤트 추적
+      analytics.trackFeatureUsed('new_unread_messages', { 
+        unreadCount: unreadCount + 1 
+      });
     } else if (isAtBottom) {
       setUnreadCount(0);
     }
-  }, [messages.length, eventLogs.length, isAtBottom]);
+  }, [messages.length, eventLogs.length, isAtBottom, unreadCount, analytics]);
   
   // 스크롤 하단으로 이동 핸들러
   const scrollToBottom = () => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     setUnreadCount(0);
     setIsAtBottom(true);
+    
+    // 스크롤 하단 이동 버튼 클릭 이벤트 추적
+    analytics.trackButtonClick('scroll_to_bottom', {
+      unreadMessagesCount: unreadCount
+    });
+  };
+  
+  // 채팅 제출 핸들러 (이벤트 추적 추가)
+  const onChatSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (chatInput.trim()) {
+      // 채팅 전송 이벤트 추적
+      analytics.track(Events.CHAT_SENT, {
+        messageLength: chatInput.length,
+        containsEmoji: /(\u00a9|\u00ae|[\u2000-\u3300]|\ud83c[\ud000-\udfff]|\ud83d[\ud000-\udfff]|\ud83e[\ud000-\udfff])/.test(chatInput)
+      });
+      
+      handleChatSubmit(e);
+    }
+  };
+  
+  // 입력 변경 핸들러 (입력 시작/종료 이벤트 추적 용)
+  const [isTyping, setIsTyping] = useState(false);
+  
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newValue = e.target.value;
+    setChatInput(newValue);
+    
+    // 타이핑 시작/종료 상태 변경 이벤트 추적
+    if (newValue.length > 0 && !isTyping) {
+      setIsTyping(true);
+      analytics.trackFeatureUsed('chat_typing_started');
+    } else if (newValue.length === 0 && isTyping) {
+      setIsTyping(false);
+      analytics.trackFeatureUsed('chat_typing_ended');
+    }
   };
 
   return (
@@ -193,6 +239,14 @@ export function ChatPanel({
                 <div 
                   key={`chat-${item.id}`} 
                   className="group hover:bg-muted/30 p-2.5 rounded-md transition-colors animate-in fade-in slide-in-from-bottom-2 duration-300"
+                  onClick={() => {
+                    // 채팅 메시지 클릭 이벤트 추적
+                    analytics.trackFeatureUsed('chat_message_clicked', {
+                      messageId: item.id,
+                      fromUser: item._user?.name || item.userName,
+                      isHostMessage: item._user?.isHost
+                    });
+                  }}
                 >
                   <div className="flex flex-wrap items-center mb-1.5 gap-1">
                     <div className="flex items-center flex-shrink-0">
@@ -228,6 +282,14 @@ export function ChatPanel({
                 <div 
                   key={`event-${item.id}`} 
                   className="group p-1.5 rounded-md transition-colors animate-in fade-in slide-in-from-bottom-2 duration-300 bg-muted/5 my-1 border-l-2 border-muted/20"
+                  onClick={() => {
+                    // 이벤트 로그 클릭 이벤트 추적
+                    analytics.trackFeatureUsed('event_log_clicked', {
+                      eventId: item.id,
+                      eventType: item.eventType,
+                      fromUser: item.user?.name
+                    });
+                  }}
                 >
                   <div className="flex items-center text-xs text-muted-foreground/70 mb-0.5">
                     <Clock className="inline h-3 w-3 mr-1 flex-shrink-0 opacity-60" />
@@ -251,70 +313,39 @@ export function ChatPanel({
               )
             ))
           ) : (
-            <div className="flex items-center justify-center h-[calc(100%-40px)] text-muted-foreground">
-              <div className="text-center">
-                <MessageSquare className="h-10 w-10 mx-auto mb-3 opacity-20" />
-                <p className="font-medium mb-1">아직 메시지가 없습니다</p>
-                <p className="text-xs">첫 메시지를 보내보세요!</p>
-              </div>
+            <div className="text-center py-10 text-muted-foreground">
+              메시지가 없습니다.
             </div>
           )}
-          <div ref={chatEndRef} className="h-2" />
+          
+          <div ref={chatEndRef} className="h-px" />
         </div>
       </ScrollArea>
-
-      {/* 새 메시지 알림 배지 */}
+      
+      {/* 새 메시지 알림 */}
       {unreadCount > 0 && (
         <Button
-          size="sm"
           variant="secondary"
-          className="absolute bottom-[60px] left-1/2 -translate-x-1/2 py-1 px-2 h-auto text-xs rounded-full shadow-lg animate-in slide-in-from-bottom fade-in"
+          size="sm"
+          className="absolute bottom-[60px] right-4 shadow-lg opacity-90 hover:opacity-100 z-20"
           onClick={scrollToBottom}
         >
-          <MessageSquare className="h-3 w-3 mr-1" />
-          {unreadCount}개의 새 메시지
-          <svg 
-            className="h-3 w-3 ml-1" 
-            xmlns="http://www.w3.org/2000/svg" 
-            width="24" 
-            height="24" 
-            viewBox="0 0 24 24" 
-            fill="none" 
-            stroke="currentColor" 
-            strokeWidth="2" 
-            strokeLinecap="round" 
-            strokeLinejoin="round"
-          >
-            <path d="m6 9 6 6 6-6"/>
-          </svg>
+          <MessageSquare className="h-4 w-4 mr-1" />
+          {unreadCount}개 새 메시지
         </Button>
       )}
-
-      <div className="p-3 border-t flex-shrink-0">
-        <form onSubmit={handleChatSubmit} className="flex gap-2">
-          <div className="relative flex-1">
-            <Input
-              value={chatInput}
-              onChange={(e) => setChatInput(e.target.value)}
-              placeholder="메시지 입력..."
-              className="pr-9"
-            />
-            <Button
-              type="button"
-              size="icon"
-              variant="ghost"
-              className="absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 p-0"
-              disabled
-            >
-              <Smile className="h-4 w-4 text-muted-foreground" />
-            </Button>
-          </div>
-          <Button 
-            type="submit" 
-            size="icon" 
-            disabled={!chatInput.trim()}
-            className="rounded-full h-9 w-9"
-          >
+      
+      {/* 채팅 입력 영역 */}
+      <div className="border-t p-2">
+        <form onSubmit={onChatSubmit} className="flex gap-2">
+          <Input
+            placeholder="메시지를 입력하세요..."
+            value={chatInput}
+            onChange={handleInputChange}
+            className="flex-1"
+            disabled={isLoading}
+          />
+          <Button type="submit" size="icon" disabled={!chatInput.trim() || isLoading}>
             <Send className="h-4 w-4" />
           </Button>
         </form>

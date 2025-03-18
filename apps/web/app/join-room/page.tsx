@@ -8,6 +8,8 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
 import * as z from "zod"
 import { LogIn, ArrowLeft, Users } from "lucide-react"
+import { useTrackEvent } from "@/hooks/use-track-event"
+import { Events } from "@/lib/mixpanel"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
@@ -41,6 +43,9 @@ function JoinRoomSection() {
   const [isButtonHovered, setIsButtonHovered] = useState(false)
   const [isJoining, setIsJoining] = useState(false)
   const [joinError, setJoinError] = useState<string | null>(null)
+  
+  // Mixpanel 이벤트 추적 초기화
+  const analytics = useTrackEvent('JoinRoom')
 
   // 클라이언트 사이드에서만 마운트 상태 업데이트
   useEffect(() => {
@@ -49,8 +54,13 @@ function JoinRoomSection() {
       setIsMounted(true)
     }, 50);
     
+    // 페이지 접속 이벤트 추적
+    analytics.trackFeatureUsed('join_room_page_viewed', {
+      isAuthenticated: !!isSignedIn
+    })
+    
     return () => clearTimeout(timer);
-  }, [])
+  }, [isSignedIn, analytics])
 
   // Initialize form
   const form = useForm<z.infer<typeof formSchema>>({
@@ -64,11 +74,29 @@ function JoinRoomSection() {
 
   // Get current join type
   const joinType = form.watch("joinType")
+  
+  // 참여 방식 변경 이벤트 추적
+  useEffect(() => {
+    if (isMounted) {
+      analytics.trackFeatureUsed('join_type_changed', {
+        joinType
+      })
+    }
+  }, [joinType, isMounted, analytics])
 
   // Handle form submission
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setJoinError(null)
     setIsJoining(true)
+    
+    // 방 참여 시도 이벤트 추적
+    analytics.trackFeatureUsed('room_join_attempted', {
+      joinType: values.joinType,
+      identifierLength: values.roomIdentifier.length,
+      isPasswordRequired,
+      hasPassword: !!values.password?.trim(),
+      isAuthenticated: !!isSignedIn
+    })
     
     try {
       const { joinType, roomIdentifier, password } = values
@@ -88,20 +116,56 @@ function JoinRoomSection() {
           if (data.isPasswordProtected && !isPasswordRequired) {
             setIsPasswordRequired(true)
             setIsJoining(false)
+            
+            // 비밀번호 필요 이벤트 추적
+            analytics.trackFeatureUsed('password_required_for_room', {
+              roomName: roomIdentifier,
+              roomId: data.roomId
+            })
+            
             return
           }
+          
+          // 방 참여 성공 이벤트 추적
+          analytics.track(Events.ROOM_JOINED, {
+            joinMethod: 'name',
+            roomId: data.roomId,
+            roomName: roomIdentifier,
+            requiredPassword: data.isPasswordProtected,
+            isAuthenticated: !!isSignedIn
+          })
           
           // Navigate to the room
           router.push(`/room/${data.roomId}`)
         } else {
+          // 방 찾기 실패 이벤트 추적
+          analytics.trackError('room_not_found', {
+            joinType: 'name',
+            roomName: roomIdentifier
+          })
+          
           setJoinError("No room with that name exists")
           setIsJoining(false)
         }
       } else {
+        // 방 참여 성공 이벤트 추적 (ID 기반)
+        analytics.track(Events.ROOM_JOINED, {
+          joinMethod: 'id',
+          roomId: roomIdentifier,
+          isAuthenticated: !!isSignedIn
+        })
+        
         // 방 ID로 직접 입장
         router.push(`/room/${roomIdentifier}`)
       }
     } catch (error) {
+      // 방 참여 오류 이벤트 추적
+      analytics.trackError('room_join_failed', {
+        error: error instanceof Error ? error.message : String(error),
+        joinType: values.joinType,
+        identifier: values.roomIdentifier
+      })
+      
       console.error("Failed to join room:", error)
       setJoinError("Error joining room. Please try again.")
     } finally {
@@ -167,7 +231,13 @@ function JoinRoomSection() {
         )}>
           <CardHeader>
             <div className="flex items-center mb-2">
-              <Button variant="ghost" size="icon" asChild className="mr-2">
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                asChild 
+                className="mr-2"
+                onClick={() => analytics.trackButtonClick('back_to_home')}
+              >
                 <Link href="/">
                   <ArrowLeft className="h-4 w-4" />
                 </Link>
@@ -194,6 +264,7 @@ function JoinRoomSection() {
                   <Link 
                     href="/sign-in" 
                     className="flex items-center text-primary hover:text-primary/80 font-medium transition-all duration-200"
+                    onClick={() => analytics.trackButtonClick('sign_in_from_join_room')}
                   >
                     <LogIn className="h-3.5 w-3.5 mr-1" />
                     <span className="relative">
@@ -268,22 +339,23 @@ function JoinRoomSection() {
                       <FormLabel>{joinType === "id" ? "Room ID" : "Room Name"}</FormLabel>
                       <FormControl>
                         <Input 
-                          placeholder={joinType === "id" ? "Enter 5-letter room code (e.g. ABCDE)" : "Enter room name"} 
+                          placeholder={joinType === "id" ? "Enter room ID" : "Enter room name"} 
                           {...field} 
                           className="border-border/50 focus:border-red-500/50"
-                          style={joinType === "id" ? { textTransform: "uppercase" } : {}}
                           onChange={(e) => {
-                            // ID 모드에서는 입력값을 대문자로 변환
-                            if (joinType === "id") {
-                              e.target.value = e.target.value.toUpperCase();
+                            field.onChange(e)
+                            if (e.target.value.length >= 3) {
+                              analytics.trackFeatureUsed('room_identifier_entered', {
+                                joinType,
+                                length: e.target.value.length
+                              })
                             }
-                            field.onChange(e);
                           }}
                         />
                       </FormControl>
                       <FormDescription>
                         {joinType === "id" 
-                          ? "Room codes are 5 uppercase letters (e.g. ABCDE)." 
+                          ? "Enter the room ID shared with you." 
                           : "Enter the name of the room you want to join."}
                       </FormDescription>
                       <FormMessage />
@@ -310,6 +382,14 @@ function JoinRoomSection() {
                             placeholder="Enter room password" 
                             {...field} 
                             className="border-border/50 focus:border-red-500/50"
+                            onChange={(e) => {
+                              field.onChange(e)
+                              if (e.target.value.length > 0) {
+                                analytics.trackFeatureUsed('password_entered', {
+                                  length: e.target.value.length
+                                })
+                              }
+                            }}
                           />
                         </FormControl>
                         <FormMessage />
@@ -349,7 +429,11 @@ function JoinRoomSection() {
           <CardFooter className="flex justify-center text-sm text-muted-foreground">
             <div className="text-center">
               Don&apos;t have a room ID?{" "}
-              <Link href="/create-room" className="text-primary hover:underline font-medium transition-colors">
+              <Link 
+                href="/create-room" 
+                className="text-primary hover:underline font-medium transition-colors"
+                onClick={() => analytics.trackButtonClick('create_room_from_join_page')}
+              >
                 Create a room
               </Link>
             </div>

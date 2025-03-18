@@ -8,6 +8,8 @@ import { Play, Pause, SkipForward, Volume2, VolumeX, Repeat, Plus } from "lucide
 import { formatTime } from "../../utils/room-utils"
 import { VideoItem } from "@/types/room"
 import { AddVideoDialog } from "./add-video-dialog"
+import { useTrackEvent } from "@/hooks/use-track-event"
+import { Events } from "@/lib/mixpanel"
 
 /**
  * 비디오 컨트롤 컴포넌트 Props
@@ -83,6 +85,9 @@ export function VideoControls({
   isAllowedToControl,
   handleSeek,
 }: VideoControlsProps) {
+  // Mixpanel 이벤트 추적 초기화
+  const analytics = useTrackEvent('VideoControls')
+  
   // 비디오 진행 바 클릭 시간 이동 핸들러
   const handleProgressBarClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!currentVideo || isLoading || !playerRef.current || !isAllowedToControl) return;
@@ -95,15 +100,86 @@ export function VideoControls({
       
       console.log(`[Progress Bar] 시간 이동: ${seekTime.toFixed(2)}초`);
       
+      // 이벤트 추적 - 프로그레스바 클릭
+      analytics.trackFeatureUsed('progress_bar_seek', {
+        videoId: currentVideo.videoId,
+        videoTitle: currentVideo.title,
+        currentPosition: playerRef.current?.getCurrentTime() || 0,
+        seekPosition: seekTime,
+        videoDuration: videoDuration
+      });
+      
       // handleSeek 함수 호출
       if (typeof handleSeek === 'function') {
         handleSeek(seekTime);
       } else {
         console.error('[Error] handleSeek function is not defined');
+        analytics.trackError('handleSeek_not_defined', {
+          component: 'VideoControls'
+        });
       }
     } catch (error) {
       console.error("Error seeking video:", error);
+      analytics.trackError('progress_bar_seek_error', {
+        error: error instanceof Error ? error.message : String(error),
+        videoId: currentVideo?.videoId
+      });
     }
+  };
+  
+  // 재생/일시정지 버튼 클릭 핸들러 (이벤트 추적 추가)
+  const handlePlayPauseClick = () => {
+    if (!currentVideo || isLoading || !isAllowedToControl) return;
+    
+    // 현재 상태에 따라 이벤트 추적
+    analytics.track(isPlaying ? Events.VIDEO_PAUSED : Events.VIDEO_PLAYED, {
+      videoId: currentVideo.videoId,
+      videoTitle: currentVideo.title,
+      currentPosition: playerRef.current?.getCurrentTime() || 0,
+      videoDuration: videoDuration
+    });
+    
+    handlePlayPause();
+  };
+  
+  // 다음 비디오 버튼 클릭 핸들러 (이벤트 추적 추가)
+  const handleNextVideoClick = () => {
+    if (!currentVideo || isLoading || !hasNextVideo || !isAllowedToControl) return;
+    
+    analytics.track(Events.VIDEO_SKIPPED, {
+      videoId: currentVideo.videoId,
+      videoTitle: currentVideo.title,
+      currentPosition: playerRef.current?.getCurrentTime() || 0,
+      videoDuration: videoDuration,
+      watchedPercentage: Math.round((playerRef.current?.getCurrentTime() || 0) / videoDuration * 100),
+      skippedManually: true
+    });
+    
+    handleNextVideo(true);
+  };
+  
+  // 음소거 토글 핸들러 (이벤트 추적 추가)
+  const handleMuteToggle = () => {
+    if (!currentVideo || isLoading) return;
+    
+    analytics.trackFeatureUsed('mute_toggle', {
+      videoId: currentVideo.videoId,
+      action: isMuted ? 'unmute' : 'mute'
+    });
+    
+    setIsMuted(!isMuted);
+  };
+  
+  // 자동 재생 토글 핸들러 (이벤트 추적 추가)
+  const handleAutoplayToggle = () => {
+    if (!currentVideo || isLoading || !isAllowedToControl) return;
+    
+    analytics.trackFeatureUsed('autoplay_toggle', {
+      newState: !autoplay,
+      videoId: currentVideo.videoId
+    });
+    
+    handleToggleAutoplay();
   };
   
   return (
@@ -131,7 +207,7 @@ export function VideoControls({
                 <Button
                   variant={isPlaying ? "secondary" : "default"}
                   size="icon"
-                  onClick={handlePlayPause}
+                  onClick={handlePlayPauseClick}
                   disabled={!currentVideo || isLoading || !isAllowedToControl}
                   className="h-9 w-9 rounded-full"
                 >
@@ -158,7 +234,7 @@ export function VideoControls({
                 <Button
                   variant="ghost"
                   size="icon"
-                  onClick={() => handleNextVideo(true)}
+                  onClick={handleNextVideoClick}
                   disabled={!currentVideo || isLoading || !hasNextVideo || !isAllowedToControl}
                   className="h-9 w-9 rounded-full"
                 >
@@ -181,7 +257,7 @@ export function VideoControls({
                 <Button
                   variant={isMuted ? "secondary" : "ghost"}
                   size="icon"
-                  onClick={() => setIsMuted(!isMuted)}
+                  onClick={handleMuteToggle}
                   disabled={!currentVideo || isLoading}
                   className="h-9 w-9 rounded-full"
                 >
@@ -204,7 +280,7 @@ export function VideoControls({
                 <Button
                   variant={autoplay ? "secondary" : "ghost"}
                   size="icon"
-                  onClick={handleToggleAutoplay}
+                  onClick={handleAutoplayToggle}
                   disabled={!currentVideo || isLoading || !isAllowedToControl}
                   className="h-9 w-9 rounded-full"
                 >
@@ -254,8 +330,7 @@ export function VideoControls({
             setVideoUrl={setVideoUrl}
             handleAddVideo={handleAddVideo}
             isAddingVideo={isAddingVideo}
-            triggerButtonClassName="bg-primary text-primary-foreground hover:bg-primary/90"
-            triggerButtonText="비디오 추가"
+            triggerButtonClassName="ml-4"
           />
         </div>
       </div>

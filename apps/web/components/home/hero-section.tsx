@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { Play, Plus, LogIn, ArrowRight } from "lucide-react"
 // import { motion } from "framer-motion"
+import { useTrackEvent } from "@/hooks/use-track-event"
+import { Events } from "@/lib/mixpanel"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -27,6 +29,9 @@ export function HeroSection() {
   const [isMounted, setIsMounted] = useState(false)
   const [joinByName, setJoinByName] = useState(false)
   const [isJoining, setIsJoining] = useState(false)
+  
+  // Mixpanel 이벤트 추적 초기화
+  const analytics = useTrackEvent('HomeHero')
 
   // 클라이언트 사이드에서만 마운트 상태 업데이트
   useEffect(() => {
@@ -35,8 +40,11 @@ export function HeroSection() {
       setIsMounted(true)
     }, 50);
     
+    // 페이지 접속 이벤트 추적
+    analytics.trackFeatureUsed('home_page_viewed')
+    
     return () => clearTimeout(timer);
-  }, [])
+  }, [analytics])
 
   // Handle scroll effects
   useEffect(() => {
@@ -47,10 +55,33 @@ export function HeroSection() {
     window.addEventListener("scroll", handleScroll)
     return () => window.removeEventListener("scroll", handleScroll)
   }, [])
+  
+  // 탭 변경 이벤트 추적
+  useEffect(() => {
+    if (isMounted) {
+      analytics.trackFeatureUsed('hero_tab_changed', {
+        tabName: activeTab
+      })
+    }
+  }, [activeTab, isMounted, analytics])
+  
+  // 참여 방식 변경 이벤트 추적 
+  useEffect(() => {
+    if (isMounted && activeTab === "join") {
+      analytics.trackFeatureUsed('join_method_changed', {
+        joinByName
+      })
+    }
+  }, [joinByName, activeTab, isMounted, analytics])
 
   // Quick room creation handler
   const handleQuickCreateRoom = () => {
     if (!roomName || roomName.length < 3) {
+      // 유효성 검사 실패 이벤트 추적
+      analytics.trackError('quick_create_room_validation_failed', {
+        roomNameLength: roomName.length
+      })
+      
       toast({
         title: "Room name required",
         description: "Room name must be at least 3 characters long.",
@@ -58,6 +89,11 @@ export function HeroSection() {
       })
       return
     }
+    
+    // 빠른 방 생성 버튼 클릭 이벤트 추적
+    analytics.trackButtonClick('quick_create_room', {
+      roomNameLength: roomName.length
+    })
 
     // Navigate to create room page with name parameter
     router.push(`/create-room?name=${encodeURIComponent(roomName)}`)
@@ -68,6 +104,12 @@ export function HeroSection() {
     if (joinByName) {
       // Join by room name
       if (!roomId || roomId.length < 3) {
+        // 유효성 검사 실패 이벤트 추적
+        analytics.trackError('quick_join_room_validation_failed', {
+          joinMethod: 'name',
+          identifierLength: roomId.length
+        })
+        
         toast({
           title: "Room name required",
           description: "Room name must be at least 3 characters long.",
@@ -75,6 +117,12 @@ export function HeroSection() {
         })
         return
       }
+      
+      // 빠른 방 참여 시도 이벤트 추적
+      analytics.trackFeatureUsed('quick_join_room_attempted', {
+        joinMethod: 'name',
+        identifierLength: roomId.length
+      })
 
       setIsJoining(true)
       try {
@@ -88,9 +136,23 @@ export function HeroSection() {
         const data = await response.json()
         
         if (data.exists) {
+          // 빠른 방 참여 성공 이벤트 추적
+          analytics.track(Events.ROOM_JOINED, {
+            joinMethod: 'name',
+            roomId: data.roomId,
+            roomName: roomId,
+            fromHomepage: true
+          })
+          
           // Room exists, navigate to it
           router.push(`/room/${data.roomId}`)
         } else {
+          // 방 찾기 실패 이벤트 추적
+          analytics.trackError('room_not_found', {
+            joinMethod: 'name',
+            roomName: roomId
+          })
+          
           toast({
             title: "Room not found",
             description: "No room with that name exists.",
@@ -98,6 +160,13 @@ export function HeroSection() {
           })
         }
       } catch (error) {
+        // 방 참여 오류 이벤트 추적
+        analytics.trackError('quick_join_room_failed', {
+          error: error instanceof Error ? error.message : String(error),
+          joinMethod: 'name',
+          roomName: roomId
+        })
+        
         console.error("Error finding room:", error)
         toast({
           title: "Error",
@@ -110,6 +179,12 @@ export function HeroSection() {
     } else {
       // Join by room ID
       if (!roomId) {
+        // 유효성 검사 실패 이벤트 추적
+        analytics.trackError('quick_join_room_validation_failed', {
+          joinMethod: 'id',
+          identifierLength: 0
+        })
+        
         toast({
           title: "Room ID required",
           description: "Please enter a room ID to join.",
@@ -117,6 +192,13 @@ export function HeroSection() {
         })
         return
       }
+      
+      // 빠른 방 참여 성공 이벤트 추적 (ID 기반)
+      analytics.track(Events.ROOM_JOINED, {
+        joinMethod: 'id',
+        roomId: roomId,
+        fromHomepage: true
+      })
 
       // Navigate directly to the room
       router.push(`/room/${roomId}`)
@@ -343,6 +425,11 @@ export function HeroSection() {
                 <TabsTrigger 
                   value="create" 
                   className="rounded-tl-lg data-[state=active]:bg-background data-[state=active]:text-red-500 transition-all duration-300 relative overflow-hidden group"
+                  onClick={() => {
+                    if (activeTab !== "create") {
+                      analytics.trackFeatureUsed('tab_switched_to_create')
+                    }
+                  }}
                 >
                   Create Room
                   <span 
@@ -355,6 +442,11 @@ export function HeroSection() {
                 <TabsTrigger 
                   value="join" 
                   className="rounded-tr-lg data-[state=active]:bg-background data-[state=active]:text-red-500 transition-all duration-300 relative overflow-hidden group"
+                  onClick={() => {
+                    if (activeTab !== "join") {
+                      analytics.trackFeatureUsed('tab_switched_to_join')
+                    }
+                  }}
                 >
                   Join Room
                   <span 
@@ -366,36 +458,47 @@ export function HeroSection() {
                 </TabsTrigger>
               </TabsList>
               <TabsContent value="create" className="p-6">
-                <div className="flex flex-col space-y-4">
-                  <div className="flex items-center space-x-2">
-                    <Input 
-                      placeholder="Room name (min 3 characters)" 
-                      value={roomName}
-                      onChange={(e) => setRoomName(e.target.value)}
-                      onKeyDown={handleCreateKeyDown}
-                      className="border-red-500/20 focus-visible:ring-red-500/30 shadow-sm transition-all duration-300"
-                    />
-                    <Button 
-                      onClick={handleQuickCreateRoom} 
-                      size="icon" 
-                      className="shrink-0 bg-gradient-to-r from-red-500 to-red-600 shadow-md shadow-red-500/20 hover:shadow-red-500/30 transition-all duration-300 hover:translate-y-[-2px]"
-                    >
-                      <ArrowRight className="h-4 w-4" />
-                    </Button>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <h3 className="text-sm font-medium">Room Name</h3>
+                    <div className="flex items-center space-x-2">
+                      <Input 
+                        placeholder="Enter a name for your room" 
+                        value={roomName}
+                        onChange={(e) => {
+                          setRoomName(e.target.value)
+                          if (e.target.value.length >= 3) {
+                            analytics.trackFeatureUsed('room_name_entered', {
+                              length: e.target.value.length
+                            })
+                          }
+                        }}
+                        onKeyDown={handleCreateKeyDown}
+                        className="border-red-500/20 focus-visible:ring-red-500/30 shadow-sm transition-all duration-300"
+                      />
+                      <Button 
+                        onClick={handleQuickCreateRoom} 
+                        size="icon" 
+                        className="shrink-0 bg-gradient-to-r from-red-500 to-red-600 shadow-md shadow-red-500/20 hover:shadow-red-500/30 transition-all duration-300 hover:translate-y-[-2px]"
+                      >
+                        <ArrowRight className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Create a room instantly with a name. You can add videos later.
+                    </p>
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    Create a room quickly and customize settings later.
-                  </p>
                   <Button 
                     asChild 
                     variant="outline" 
                     size="sm" 
                     className="mt-2 w-full border-red-500/20 hover:bg-red-500/5 shadow-sm transition-all duration-300 group"
+                    onClick={() => analytics.trackButtonClick('go_to_create_room_page')}
                   >
                     <Link href="/create-room">
                       <Plus className="h-4 w-4 mr-2 group-hover:rotate-90 transition-transform duration-300" />
                       <span className="relative">
-                        Advanced Room Creation
+                        Go to Create Room Page
                         <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-red-500/50 group-hover:w-full transition-all duration-300"></span>
                       </span>
                     </Link>
@@ -403,77 +506,82 @@ export function HeroSection() {
                 </div>
               </TabsContent>
               <TabsContent value="join" className="p-6">
-                <div className="flex flex-col space-y-4">
-                  <div className="flex items-center justify-between mb-2 border-b border-red-500/10 pb-2">
-                    <span className="text-sm font-medium">Join by:</span>
-                    <div className="flex items-center space-x-3">
-                      <div 
-                        className={cn(
-                          "flex items-center cursor-pointer",
-                          !joinByName ? "text-red-500" : "text-muted-foreground"
-                        )}
-                        onClick={() => setJoinByName(false)}
-                      >
-                        <span className="text-sm">Room ID</span>
-                      </div>
-                      <div className="relative w-10 h-5">
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between mb-2">
+                      <h3 className="text-sm font-medium">Join by</h3>
+                      <div className="flex items-center space-x-4 text-xs">
                         <div 
                           className={cn(
-                            "absolute w-10 h-5 rounded-full cursor-pointer transition-colors duration-300",
-                            joinByName ? "bg-red-500" : "bg-muted"
+                            "flex items-center cursor-pointer",
+                            !joinByName ? "text-red-500" : "text-muted-foreground"
                           )}
-                          onClick={() => setJoinByName(!joinByName)}
+                          onClick={() => {
+                            setJoinByName(false)
+                            analytics.trackFeatureUsed('join_method_selected', {
+                              method: 'id'
+                            })
+                          }}
                         >
-                          <div 
-                            className={cn(
-                              "absolute w-4 h-4 bg-white rounded-full top-0.5 left-0.5 transition-transform duration-300 shadow-sm",
-                              joinByName ? "translate-x-5" : "translate-x-0"
-                            )}
-                          />
+                          <span className="text-sm">Room ID</span>
+                        </div>
+                        <div 
+                          className={cn(
+                            "flex items-center cursor-pointer",
+                            joinByName ? "text-red-500" : "text-muted-foreground"
+                          )}
+                          onClick={() => {
+                            setJoinByName(true)
+                            analytics.trackFeatureUsed('join_method_selected', {
+                              method: 'name'
+                            })
+                          }}
+                        >
+                          <span className="text-sm">Room Name</span>
                         </div>
                       </div>
-                      <div 
-                        className={cn(
-                          "flex items-center cursor-pointer",
-                          joinByName ? "text-red-500" : "text-muted-foreground"
-                        )}
-                        onClick={() => setJoinByName(true)}
-                      >
-                        <span className="text-sm">Room Name</span>
-                      </div>
                     </div>
+                    <div className="flex items-center space-x-2">
+                      <Input 
+                        placeholder={joinByName ? "Enter room name" : "Enter room ID"} 
+                        value={roomId}
+                        onChange={(e) => {
+                          setRoomId(e.target.value)
+                          if (e.target.value.length >= 3) {
+                            analytics.trackFeatureUsed('room_identifier_entered', {
+                              joinMethod: joinByName ? 'name' : 'id',
+                              length: e.target.value.length
+                            })
+                          }
+                        }}
+                        onKeyDown={handleJoinKeyDown}
+                        className="border-red-500/20 focus-visible:ring-red-500/30 shadow-sm transition-all duration-300"
+                      />
+                      <Button 
+                        onClick={handleQuickJoinRoom} 
+                        size="icon" 
+                        disabled={isJoining}
+                        className="shrink-0 bg-gradient-to-r from-red-500 to-red-600 shadow-md shadow-red-500/20 hover:shadow-red-500/30 transition-all duration-300 hover:translate-y-[-2px]"
+                      >
+                        {isJoining ? (
+                          <div className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                        ) : (
+                          <ArrowRight className="h-4 w-4" />
+                        )}
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {joinByName 
+                        ? "Enter a room name to join instantly." 
+                        : "Enter a room ID to join instantly."}
+                    </p>
                   </div>
-                  <div className="flex items-center space-x-2">
-                    <Input 
-                      placeholder={joinByName ? "Enter room name" : "Enter room ID"} 
-                      value={roomId}
-                      onChange={(e) => setRoomId(e.target.value)}
-                      onKeyDown={handleJoinKeyDown}
-                      className="border-red-500/20 focus-visible:ring-red-500/30 shadow-sm transition-all duration-300"
-                    />
-                    <Button 
-                      onClick={handleQuickJoinRoom} 
-                      size="icon" 
-                      disabled={isJoining}
-                      className="shrink-0 bg-gradient-to-r from-red-500 to-red-600 shadow-md shadow-red-500/20 hover:shadow-red-500/30 transition-all duration-300 hover:translate-y-[-2px]"
-                    >
-                      {isJoining ? (
-                        <div className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
-                      ) : (
-                        <ArrowRight className="h-4 w-4" />
-                      )}
-                    </Button>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {joinByName 
-                      ? "Enter a room name to join instantly." 
-                      : "Enter a room ID to join instantly."}
-                  </p>
                   <Button 
                     asChild 
                     variant="outline" 
                     size="sm" 
                     className="mt-2 w-full border-red-500/20 hover:bg-red-500/5 shadow-sm transition-all duration-300 group"
+                    onClick={() => analytics.trackButtonClick('go_to_join_room_page')}
                   >
                     <Link href="/join-room">
                       <LogIn className="h-4 w-4 mr-2 group-hover:translate-x-1 transition-transform duration-300" />
@@ -492,7 +600,10 @@ export function HeroSection() {
         {/* Floating scroll indicator - 위치 조정 */}
         <div className="relative h-16 mt-8 md:mt-12">
           <button 
-            onClick={() => document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })}
+            onClick={() => {
+              document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' })
+              analytics.trackButtonClick('scroll_to_features')
+            }}
             className={cn(
               "absolute left-1/2 transform -translate-x-1/2 flex flex-col items-center transition-all duration-500",
               isScrolled ? "opacity-0 pointer-events-none" : "opacity-100"

@@ -6,6 +6,8 @@ import Image from "next/image"
 import { usePathname } from "next/navigation"
 import { useUser, UserButton, SignInButton } from "@clerk/nextjs"
 import { Menu, X, Youtube, Home, PlusCircle, LogIn, User, ChevronRight } from "lucide-react"
+import { useTrackEvent } from "@/hooks/use-track-event"
+import { Events } from "@/lib/mixpanel"
 
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
@@ -30,6 +32,9 @@ export function Navbar() {
   const [isScrolled, setIsScrolled] = useState(false)
   const [hoveredItem, setHoveredItem] = useState<string | null>(null)
   const menuRef = useRef<HTMLDivElement>(null)
+  
+  // Mixpanel 이벤트 추적 초기화
+  const analytics = useTrackEvent('Navbar')
 
   // Define navigation items
   const navItems: NavItem[] = [
@@ -61,14 +66,20 @@ export function Navbar() {
   useEffect(() => {
     if (isMenuOpen) {
       document.body.style.overflow = 'hidden'
+      // 메뉴 열림 이벤트 추적
+      analytics.trackFeatureUsed('mobile_menu_opened')
     } else {
       document.body.style.overflow = 'auto'
+      // 메뉴 닫힘 이벤트 추적 (초기 렌더링 제외)
+      if (isLoaded) {
+        analytics.trackFeatureUsed('mobile_menu_closed')
+      }
     }
 
     return () => {
       document.body.style.overflow = 'auto'
     }
-  }, [isMenuOpen])
+  }, [isMenuOpen, isLoaded, analytics])
 
   // Close mobile menu when route changes
   useEffect(() => {
@@ -78,14 +89,35 @@ export function Navbar() {
   // Handle scroll effects
   useEffect(() => {
     const handleScroll = () => {
-      setIsScrolled(window.scrollY > 10)
+      const wasScrolled = isScrolled
+      const newScrolled = window.scrollY > 10
+      setIsScrolled(newScrolled)
+      
+      // 스크롤 상태 변경 시 이벤트 추적 (스크롤 시작/종료)
+      if (wasScrolled !== newScrolled) {
+        analytics.trackFeatureUsed(newScrolled ? 'header_scrolled' : 'header_at_top')
+      }
     }
     
     window.addEventListener("scroll", handleScroll)
     return () => window.removeEventListener("scroll", handleScroll)
-  }, [])
+  }, [isScrolled, analytics])
 
   const closeMenu = () => setIsMenuOpen(false)
+  
+  // 네비게이션 링크 클릭 추적 함수
+  const trackNavClick = (label: string) => {
+    analytics.trackButtonClick(`nav_${label.toLowerCase().replace(/\s+/g, '_')}`, { 
+      current_path: pathname
+    })
+  }
+  
+  // 로고 클릭 추적 함수
+  const trackLogoClick = () => {
+    analytics.trackButtonClick('logo', {
+      current_path: pathname
+    })
+  }
 
   return (
     <header className={cn(
@@ -95,7 +127,7 @@ export function Navbar() {
         : "bg-background border-red-500/5"
     )}>
       <div className="flex h-16 items-center justify-between px-4 md:px-6 mx-auto max-w-7xl">
-        <Link href="/" className="flex items-center group">
+        <Link href="/" className="flex items-center group" onClick={trackLogoClick}>
           <div className="flex items-center gap-2 relative">
             <Youtube className="h-6 w-6 text-red-600 transition-transform duration-300 group-hover:scale-110 group-hover:rotate-3" />
             <span className="font-semibold text-lg relative">
@@ -120,6 +152,7 @@ export function Navbar() {
               isHovered={hoveredItem === item.href}
               onHover={() => setHoveredItem(item.href)}
               onLeave={() => setHoveredItem(null)}
+              onClick={() => trackNavClick(item.label)}
             />
           ))}
         </nav>
@@ -130,7 +163,19 @@ export function Navbar() {
           ) : isSignedIn ? (
             <div className="relative group">
               <div className="absolute -inset-1 bg-gradient-to-r from-red-500 to-rose-500 rounded-full opacity-0 group-hover:opacity-70 blur transition duration-300 group-hover:duration-200"></div>
-              <UserButton afterSignOutUrl="/" />
+              <UserButton 
+                afterSignOutUrl="/" 
+                userProfileMode="navigation"
+                userProfileUrl="/profile"
+                appearance={{
+                  elements: {
+                    userButtonAvatarBox: {
+                      width: '32px',
+                      height: '32px'
+                    }
+                  }
+                }}
+              />
             </div>
           ) : (
             <SignInButton mode="modal">
@@ -138,6 +183,7 @@ export function Navbar() {
                 variant="outline" 
                 size="sm" 
                 className="gap-1.5 border-red-500/20 hover:bg-red-500/5 shadow-sm shadow-red-500/10 transition-all duration-300 hover:shadow-md hover:shadow-red-500/20 hover:-translate-y-0.5 overflow-hidden group"
+                onClick={() => analytics.track(Events.BUTTON_CLICKED, { buttonName: 'sign_in' })}
               >
                 <Youtube className="h-4 w-4 text-red-600 transition-transform duration-300 group-hover:scale-110 group-hover:rotate-3" />
                 <span className="relative">
@@ -152,7 +198,10 @@ export function Navbar() {
             variant="ghost" 
             size="icon" 
             className="md:hidden hover:bg-red-500/5 transition-transform duration-300 hover:rotate-3" 
-            onClick={() => setIsMenuOpen(!isMenuOpen)}
+            onClick={() => {
+              setIsMenuOpen(!isMenuOpen)
+              analytics.trackButtonClick('mobile_menu_toggle', { action: isMenuOpen ? 'close' : 'open' })
+            }}
             aria-label={isMenuOpen ? "Close menu" : "Open menu"}
             aria-expanded={isMenuOpen}
           >
@@ -191,7 +240,10 @@ export function Navbar() {
               <MobileNavLink 
                 key={item.href} 
                 item={item} 
-                onClick={closeMenu}
+                onClick={() => {
+                  closeMenu() 
+                  trackNavClick(`mobile_${item.label}`)
+                }}
                 isActive={
                   item.href === "/" 
                     ? pathname === "/" 
@@ -212,6 +264,7 @@ export function Navbar() {
                 variant="outline" 
                 className="justify-start border-red-500/20 hover:bg-red-500/5 shadow-sm transition-all duration-300 hover:shadow-md hover:shadow-red-500/10 hover:-translate-y-0.5 animate-in fade-in-50 slide-in-from-left-5 duration-300" 
                 style={{ animationDelay: "500ms" }}
+                onClick={() => analytics.trackButtonClick('quick_action_new_room')}
               >
                 <Link href="/create-room">
                   <PlusCircle className="h-4 w-4 mr-2 text-red-500 group-hover:animate-spin" />
@@ -226,6 +279,7 @@ export function Navbar() {
                 variant="outline" 
                 className="justify-start border-red-500/20 hover:bg-red-500/5 shadow-sm transition-all duration-300 hover:shadow-md hover:shadow-red-500/10 hover:-translate-y-0.5 animate-in fade-in-50 slide-in-from-right-5 duration-300" 
                 style={{ animationDelay: "600ms" }}
+                onClick={() => analytics.trackButtonClick('quick_action_join_room')}
               >
                 <Link href="/join-room">
                   <LogIn className="h-4 w-4 mr-2 text-red-500" />
@@ -249,45 +303,49 @@ export function Navbar() {
  * @param isHovered - Whether the link is being hovered
  * @param onHover - Function to call when hovering starts
  * @param onLeave - Function to call when hovering ends
+ * @param onClick - Function to call when link is clicked
  */
 function NavLink({ 
   item, 
   isActive, 
   isHovered, 
   onHover, 
-  onLeave 
+  onLeave,
+  onClick
 }: { 
   item: NavItem; 
   isActive: boolean; 
   isHovered: boolean;
   onHover: () => void;
   onLeave: () => void;
+  onClick: () => void;
 }) {
   return (
-    <Link 
-      href={item.href} 
+    <Link
+      href={item.href}
       className={cn(
-        "px-3 py-2 text-sm font-medium rounded-md transition-all duration-300 flex items-center gap-1.5 relative group",
-        isActive 
-          ? "bg-red-500/10 text-red-600 shadow-sm shadow-red-500/10" 
-          : "hover:bg-red-500/5 text-foreground/80 hover:text-red-600"
+        "relative px-3 py-1.5 text-sm font-medium transition-all duration-300 rounded-md",
+        isActive
+          ? "text-foreground bg-muted hover:bg-muted"
+          : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
       )}
-      aria-current={isActive ? "page" : undefined}
       onMouseEnter={onHover}
       onMouseLeave={onLeave}
+      onClick={onClick}
     >
-      <span className={cn(
-        "transition-transform duration-300",
-        (isHovered || isActive) && "scale-110"
-      )}>
+      <div className="flex items-center gap-1.5">
         {item.icon}
-      </span>
-      <span>{item.label}</span>
+        <span>{item.label}</span>
+      </div>
+      
+      {/* Active indicator */}
       {isActive && (
-        <span className="absolute bottom-0 left-0 w-full h-0.5 bg-gradient-to-r from-red-500 to-transparent"></span>
-      )}
-      {!isActive && (
-        <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-gradient-to-r from-red-500 to-transparent group-hover:w-full transition-all duration-300"></span>
+        <span 
+          className={cn(
+            "absolute inset-x-2 -bottom-[1px] h-[2px] bg-red-500 rounded-full transform transition-transform duration-300",
+            isHovered ? "scale-x-110" : "scale-x-100"
+          )}
+        />
       )}
     </Link>
   )
@@ -296,9 +354,9 @@ function NavLink({
 /**
  * Mobile navigation link component
  * @param item - Navigation item information
- * @param onClick - Click event handler
+ * @param onClick - Function to call when link is clicked
  * @param isActive - Whether the link is active
- * @param animationDelay - Delay for entrance animation
+ * @param animationDelay - Delay for appearance animation
  */
 function MobileNavLink({ 
   item, 
@@ -312,35 +370,33 @@ function MobileNavLink({
   animationDelay?: number;
 }) {
   return (
-    <Link
-      href={item.href}
+    <Button
+      asChild
+      variant="ghost"
       className={cn(
-        "flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-md transition-all duration-300 group relative overflow-hidden animate-in fade-in-50 slide-in-from-right-5",
-        isActive 
-          ? "bg-red-500/10 text-red-600 shadow-sm shadow-red-500/10" 
-          : "hover:bg-red-500/5 text-foreground/80 hover:text-red-600 hover:translate-x-1"
+        "w-full justify-start gap-2 px-2 animate-in fade-in-50 slide-in-from-right-5 duration-300 border border-transparent",
+        isActive ? 
+          "bg-muted border-red-500/20" : 
+          "hover:bg-muted/50"
       )}
-      onClick={onClick}
-      aria-current={isActive ? "page" : undefined}
       style={{ animationDelay: `${animationDelay}ms` }}
     >
-      <span className={cn(
-        "transition-transform duration-300 group-hover:scale-110 group-hover:rotate-3",
-        isActive && "text-red-600"
-      )}>
-        {item.icon}
-      </span>
-      <span>{item.label}</span>
-      {isActive && (
-        <ChevronRight className="h-4 w-4 ml-auto text-red-500 animate-bounce-x" />
-      )}
-      {isActive && (
-        <span className="absolute bottom-0 left-0 w-full h-0.5 bg-gradient-to-r from-red-500 to-transparent"></span>
-      )}
-      {!isActive && (
-        <span className="absolute bottom-0 left-0 w-0 h-0.5 bg-gradient-to-r from-red-500 to-transparent group-hover:w-full transition-all duration-300"></span>
-      )}
-    </Link>
+      <Link href={item.href} onClick={onClick} className="flex items-center justify-between w-full">
+        <div className="flex items-center gap-3">
+          <div className={cn(
+            "w-8 h-8 flex items-center justify-center rounded-md",
+            isActive ? "bg-red-100 text-red-600 dark:bg-red-950 dark:text-red-300" : "bg-muted"
+          )}>
+            {item.icon}
+          </div>
+          <span className={cn(
+            "font-medium",
+            isActive ? "text-foreground" : "text-muted-foreground"
+          )}>{item.label}</span>
+        </div>
+        {isActive && <ChevronRight className="h-4 w-4 text-muted-foreground/50" />}
+      </Link>
+    </Button>
   )
 }
 
