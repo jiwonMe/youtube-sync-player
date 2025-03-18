@@ -16,11 +16,16 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
-  experimental: {
-    webpackBuildWorker: true,
-    parallelServerBuildTraces: true,
-    parallelServerCompiles: true,
+  // Output standalone for better compatibility
+  output: 'standalone',
+  // Disable experimental features that might cause issues
+  experimental: {},
+  // Ensure proper build ID generation
+  generateBuildId: async () => {
+    return 'build-' + new Date().getTime();
   },
+  // Add trailingSlash true to ensure route compatibility
+  trailingSlash: true
 }
 
 mergeConfig(nextConfig, userConfig)
