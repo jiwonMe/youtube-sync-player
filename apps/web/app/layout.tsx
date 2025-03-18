@@ -6,6 +6,7 @@ import { Navbar } from "@/components/navbar"
 import { Footer } from "@/components/footer"
 import { CLERK_PUBLISHABLE_KEY } from "@/lib/env"
 import "./globals.css"
+import { usePathname } from "next/navigation"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -46,10 +47,21 @@ export default function RootLayout({
           <ThemeProvider defaultTheme="system">
             <Navbar />
             <main className="min-h-[calc(100vh-4rem)]">{children}</main>
-            <Footer />
+            <ClientFooter />
           </ThemeProvider>
         </body>
       </html>
     </ClerkProvider>
   )
+}
+
+// Client component에서 경로 기반 조건부 렌더링
+"use client"
+
+function ClientFooter() {
+  const pathname = usePathname()
+  if (pathname?.startsWith("/room")) {
+    return null
+  }
+  return <Footer />
 }
