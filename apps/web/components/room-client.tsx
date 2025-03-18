@@ -89,6 +89,9 @@ export default function RoomClient({ roomId }: { roomId: string }) {
     roomName: "",
     isPasswordProtected: false,
   })
+  const [lastSyncTime, setLastSyncTime] = useState(0)
+  const [syncInterval, setSyncInterval] = useState<NodeJS.Timeout | null>(null)
+  const [hasInitialSync, setHasInitialSync] = useState(false) // 최초 동기화 여부 추적
 
   const playerRef = useRef<any>(null)
   const chatEndRef = useRef<HTMLDivElement>(null)
@@ -170,6 +173,19 @@ export default function RoomClient({ roomId }: { roomId: string }) {
     socketIo.on("room:state", (state) => {
       setIsLoading(false)
       setRoomState(state)
+      
+      // 최초 방 상태를 받았을 때 마지막 동기화 시간 설정
+      if (state.lastSyncTime) {
+        setLastSyncTime(state.lastSyncTime);
+      }
+      
+      // 최초 접속 시 동기화 요청 (비호스트만)
+      const isUserHost = isSignedIn && user?.id === state.hostId;
+      if (!isUserHost && !hasInitialSync) {
+        // 서버에 동기화 요청
+        socketIo.emit("player:requestSync");
+        setHasInitialSync(true);
+      }
     })
 
     // 플레이어 상태 변경 리스너
@@ -180,6 +196,60 @@ export default function RoomClient({ roomId }: { roomId: string }) {
         currentTime: data.currentTime,
       }))
     })
+
+    // 동기화 데이터 수신 리스너
+    socketIo.on("player:sync", (data: { isPlaying: boolean; currentTime: number; syncTime: number; videoId?: string }) => {
+      // 동기화 데이터 수신
+      setLastSyncTime(data.syncTime);
+      
+      // 비디오 ID가 변경되었는지 확인
+      if (data.videoId && (!roomState.currentVideo || roomState.currentVideo.videoId !== data.videoId)) {
+        const video = roomState.playlist.find((v) => v.videoId === data.videoId);
+        if (video) {
+          setIsVideoChanging(true);
+          setRoomState((prev) => ({
+            ...prev,
+            currentVideo: video,
+            currentTime: data.currentTime,
+            isPlaying: data.isPlaying,
+          }));
+          
+          setTimeout(() => {
+            setIsVideoChanging(false);
+          }, 1000);
+        }
+      } else {
+        // 비디오 시간과 상태만 업데이트
+        setRoomState((prev) => ({
+          ...prev,
+          currentTime: data.currentTime,
+          isPlaying: data.isPlaying,
+        }));
+      }
+    });
+
+    // 동기화 요청 리스너 (호스트만 처리)
+    socketIo.on("player:requestSync", (data: { userId: string; socketId: string }) => {
+      const isHost = isSignedIn && user?.id === roomState.hostId;
+      
+      if (isHost && playerRef.current) {
+        try {
+          const currentTime = playerRef.current.getCurrentTime() || 0;
+          const isPlaying = playerRef.current.getPlayerState() === 1;
+          const videoId = roomState.currentVideo?.videoId;
+          
+          // 특정 사용자에게 동기화 데이터 전송
+          socketIo.emit("player:syncTo", {
+            targetSocketId: data.socketId,
+            isPlaying: isPlaying,
+            currentTime: currentTime,
+            videoId: videoId
+          });
+        } catch (err) {
+          console.error("동기화 데이터 전송 중 오류:", err);
+        }
+      }
+    });
 
     // 자동 재생 토글 리스너
     socketIo.on("autoplay:toggle", (data: { autoplay: boolean }) => {
@@ -260,8 +330,51 @@ export default function RoomClient({ roomId }: { roomId: string }) {
       if (socketIo) {
         socketIo.disconnect()
       }
+      
+      // 동기화 인터벌 정리
+      if (syncInterval) {
+        clearInterval(syncInterval);
+      }
     }
-  }, [roomId, user, isSignedIn, isLoaded, isPasswordVerified])
+  }, [roomId, user, isSignedIn, isLoaded, isPasswordVerified, hasInitialSync, roomState.hostId])
+
+  // 호스트 동기화 메커니즘 - 1초마다 재생 시간 전송
+  useEffect(() => {
+    if (!socket || !playerRef.current) return;
+    
+    const isHost = isSignedIn && user?.id === roomState.hostId;
+    
+    // 기존 인터벌 제거
+    if (syncInterval) {
+      clearInterval(syncInterval);
+    }
+    
+    // 호스트만 동기화 인터벌 설정
+    if (isHost) {
+      // 1초마다 재생 시간 전송
+      const newInterval = setInterval(() => {
+        try {
+          const currentTime = playerRef.current.getCurrentTime() || 0;
+          const isPlaying = playerRef.current.getPlayerState() === 1;
+          const videoId = roomState.currentVideo?.videoId;
+          
+          socket.emit("player:sync", {
+            isPlaying: isPlaying,
+            currentTime: currentTime,
+            videoId: videoId
+          });
+        } catch (err) {
+          console.error("동기화 데이터 전송 중 오류:", err);
+        }
+      }, 1000); // 1초마다 실행
+      
+      setSyncInterval(newInterval);
+      
+      return () => {
+        clearInterval(newInterval);
+      };
+    }
+  }, [socket, user, isSignedIn, roomState.hostId, playerRef.current]);
 
   // 새 메시지 도착 시 채팅 스크롤 아래로 이동
   useEffect(() => {

@@ -62,6 +62,7 @@ type RoomState = {
   createdAt: number
   autoplay: boolean // 자동 재생 설정 추가
   description?: string // 방 설명 필드 추가
+  lastSyncTime?: number // 마지막 동기화 시간 추가
 }
 
 // Load environment variables
@@ -216,6 +217,7 @@ const httpServer = createServer((req, res) => {
           createdAt: Date.now(),
           autoplay: true,
           description: description, // 방 설명 추가
+          lastSyncTime: Date.now(), // 마지막 동기화 시간 추가
         });
 
         // 이름으로도 방을 찾을 수 있도록 매핑 추가
@@ -326,6 +328,7 @@ io.on("connection", (socket) => {
       isPasswordProtected: false,
       createdAt: Date.now(),
       autoplay: true,
+      lastSyncTime: Date.now(), // 마지막 동기화 시간 추가
     })
   }
 
@@ -363,11 +366,71 @@ io.on("connection", (socket) => {
     isHost: userId === room.hostId,
   })
 
+  // 주기적인 동기화: 호스트로부터 현재 재생 상태 수신
+  socket.on("player:sync", (data: { isPlaying: boolean; currentTime: number; videoId?: string }) => {
+    // 호스트로부터의 동기화 요청인지 확인
+    if (userId === room.hostId) {
+      // 방 상태 업데이트
+      room.isPlaying = data.isPlaying;
+      room.currentTime = data.currentTime;
+      room.lastSyncTime = Date.now();
+      
+      // 비디오 ID가 변경된 경우 현재 비디오 업데이트
+      if (data.videoId && room.currentVideo && room.currentVideo.videoId !== data.videoId) {
+        const video = room.playlist.find(v => v.videoId === data.videoId);
+        if (video) {
+          room.currentVideo = video;
+        }
+      }
+      
+      // 다른 사용자들에게 동기화 데이터 브로드캐스트
+      socket.to(roomId).emit("player:sync", {
+        isPlaying: room.isPlaying,
+        currentTime: room.currentTime,
+        syncTime: room.lastSyncTime,
+        videoId: room.currentVideo?.videoId,
+      });
+    }
+  });
+
+  // 비호스트 클라이언트에서 동기화 요청
+  socket.on("player:requestSync", () => {
+    // 방 상태를 호스트에게 동기화 요청
+    const hostUser = room.users.find(u => u.id === room.hostId);
+    if (hostUser) {
+      io.to(hostUser.socketId).emit("player:requestSync", {
+        userId: userId,
+        socketId: socket.id
+      });
+    } else {
+      // 호스트가 없으면 현재 서버에 저장된 상태 전송
+      socket.emit("player:sync", {
+        isPlaying: room.isPlaying,
+        currentTime: room.currentTime,
+        syncTime: room.lastSyncTime,
+        videoId: room.currentVideo?.videoId,
+      });
+    }
+  });
+
+  // 호스트가 특정 사용자에게 동기화 데이터 전송
+  socket.on("player:syncTo", (data: { targetSocketId: string; isPlaying: boolean; currentTime: number; videoId?: string }) => {
+    if (userId === room.hostId) {
+      io.to(data.targetSocketId).emit("player:sync", {
+        isPlaying: data.isPlaying,
+        currentTime: data.currentTime,
+        syncTime: Date.now(),
+        videoId: data.videoId || room.currentVideo?.videoId,
+      });
+    }
+  });
+
   // Handle player state change
   socket.on("player:stateChange", (data: { isPlaying: boolean; currentTime: number }) => {
     // Update room state
     room.isPlaying = data.isPlaying
     room.currentTime = data.currentTime
+    room.lastSyncTime = Date.now()
 
     // Broadcast to other users
     socket.to(roomId).emit("player:stateChange", data)

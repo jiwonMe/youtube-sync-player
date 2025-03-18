@@ -41,4 +41,5 @@ export type RoomState = {
   password?: string;
   createdAt: number;
   autoplay: boolean;
+  lastSyncTime?: number;
 }; 

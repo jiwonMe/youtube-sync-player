@@ -160,11 +160,11 @@ export function YouTubePlayer({
     if (!isReady || !isPlayerMounted) return;
     
     safePlayerCall((player) => {
-      // Only seek if the difference is significant (more than 3 seconds)
-      // This prevents constant seeking which can cause playback issues
       try {
         const currentPlayerTime = player.getCurrentTime() || 0;
-        if (Math.abs(currentPlayerTime - currentTime) > 3) {
+        // 시간 차이가 0.5초 이상일 때만 동기화 (너무 빈번한 동기화 방지)
+        if (Math.abs(currentPlayerTime - currentTime) > 0.5) {
+          console.log(`시간 동기화: ${currentPlayerTime.toFixed(2)}s -> ${currentTime.toFixed(2)}s (차이: ${Math.abs(currentPlayerTime - currentTime).toFixed(2)}s)`);
           player.seekTo(currentTime);
         }
       } catch (err) {
