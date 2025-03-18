@@ -1,19 +1,4 @@
 {
   "version": 2,
-  "framework": "nextjs",
-  "buildCommand": "pnpm --filter=web run build",
-  "installCommand": "pnpm install",
-  "outputDirectory": "apps/web/.next",
-  "builds": [
-    {
-      "src": "apps/web/package.json",
-      "use": "@vercel/next",
-      "config": {
-        "rootDir": "apps/web"
-      }
-    }
-  ],
-  "rewrites": [
-    { "source": "/(.*)", "destination": "/apps/web/$1" }
-  ]
+  "rootDirectory": "apps/web"
 }

@@ -17,7 +17,10 @@ const nextConfig = {
     unoptimized: true,
   },
   // Disable experimental features that might cause issues
-  experimental: {},
+  experimental: {
+    appDir: true
+  },
+  output: 'standalone',
   // Clerk configuration
   transpilePackages: ["@clerk/nextjs"],
   // Ensure proper build ID generation
