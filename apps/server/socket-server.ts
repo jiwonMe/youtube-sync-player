@@ -597,16 +597,24 @@ io.on("connection", (socket) => {
           }
         }, 60000) // 1 minute delay
       } else if (userId === room.hostId) {
-        // If host left, assign a new host
-        const newHost = room.users[0]
-        room.hostId = newHost.id
-        newHost.isHost = true
+        // If host left, assign a new host randomly
+        // 방에 남아있는 사용자 중 랜덤하게 새 호스트 선택
+        const randomIndex = Math.floor(Math.random() * room.users.length);
+        const newHost = room.users[randomIndex];
+        room.hostId = newHost.id;
+        
+        // 모든 사용자의 isHost 플래그 초기화
+        room.users.forEach(user => {
+          user.isHost = user.id === newHost.id;
+        });
 
         // Notify all users about the new host
         io.to(roomId).emit("host:changed", {
           id: newHost.id,
           name: newHost.name,
-        })
+        });
+        
+        console.log(`New host assigned in room ${roomId}: ${newHost.name} (${newHost.id})`);
       }
 
       // Notify other users that someone left

@@ -325,6 +325,41 @@ export default function RoomClient({ roomId }: { roomId: string }) {
       }))
     })
 
+    // 호스트 변경 리스너 추가
+    socketIo.on("host:changed", (data: { id: string, name: string }) => {
+      // roomState 업데이트
+      setRoomState((prev) => {
+        // 새 호스트 ID 업데이트
+        const updatedState = {
+          ...prev,
+          hostId: data.id,
+          // 모든 사용자의 호스트 상태 업데이트
+          users: prev.users.map(user => ({
+            ...user,
+            isHost: user.id === data.id
+          }))
+        };
+        
+        return updatedState;
+      });
+      
+      // 현재 사용자가 새 호스트인지 확인하고 알림 표시
+      if (isSignedIn && user?.id === data.id) {
+        toast({
+          title: "호스트 권한을 얻었습니다",
+          description: "이제 방의 호스트가 되었습니다. 비디오 재생을 제어할 수 있습니다.",
+          duration: 5000,
+        });
+      } else {
+        // 다른 사용자에게 호스트 변경 알림
+        toast({
+          title: "호스트가 변경되었습니다",
+          description: `${data.name}님이 새로운 호스트가 되었습니다.`,
+          duration: 3000,
+        });
+      }
+    });
+
     // 소켓 연결 정리
     return () => {
       if (socketIo) {
@@ -351,6 +386,8 @@ export default function RoomClient({ roomId }: { roomId: string }) {
     
     // 호스트만 동기화 인터벌 설정
     if (isHost) {
+      console.log("호스트로서 동기화 인터벌 설정");
+      
       // 1초마다 재생 시간 전송
       const newInterval = setInterval(() => {
         try {
@@ -373,8 +410,10 @@ export default function RoomClient({ roomId }: { roomId: string }) {
       return () => {
         clearInterval(newInterval);
       };
+    } else {
+      console.log("일반 사용자로서 동기화 인터벌 해제");
     }
-  }, [socket, user, isSignedIn, roomState.hostId, playerRef.current]);
+  }, [socket, user, isSignedIn, roomState.hostId]);
 
   // 새 메시지 도착 시 채팅 스크롤 아래로 이동
   useEffect(() => {
