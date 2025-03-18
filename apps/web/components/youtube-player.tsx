@@ -3,6 +3,7 @@
 import type React from "react"
 import { useEffect, useRef, useState } from "react"
 import YouTube from "react-youtube"
+import { useToast } from "@/hooks/use-toast"
 
 interface YouTubePlayerProps {
   videoId: string
@@ -29,6 +30,7 @@ export function YouTubePlayer({
   const [isReady, setIsReady] = useState(false)
   const [isPlayerMounted, setIsPlayerMounted] = useState(false)
   const [initialPlayTriggered, setInitialPlayTriggered] = useState(false)
+  const { toast } = useToast()
   
   // 상태 관리 및 디버깅을 위한 추가 state
   const [lastAction, setLastAction] = useState<"none" | "play" | "pause">("none")
@@ -76,19 +78,45 @@ export function YouTubePlayer({
 
   // Handle player error
   const onError = (event: any) => {
+    const errorCode = event.data;
+    const errorMessage = getErrorMessage(errorCode);
+    
     console.error("YouTube Player Error:", {
-      data: event.data,
+      data: errorCode,
       target: event.target,
       error: {
-        code: event.data,
-        message: getErrorMessage(event.data)
+        code: errorCode,
+        message: errorMessage
       }
     });
-    setError(getErrorMessage(event.data));
+    
+    setError(errorMessage);
+    
+    // 임베딩 제한 및 비디오 찾을 수 없음 오류일 경우 특수 메시지 표시
+    if (errorCode === 101 || errorCode === 150) {
+      toast({
+        title: "비디오 재생 불가",
+        description: "이 비디오는 소유자가 외부 재생을 제한했습니다. 다음 곡으로 자동 넘어갑니다.",
+        variant: "destructive",
+      });
+    } else if (errorCode === 100) {
+      toast({
+        title: "비디오를 찾을 수 없음",
+        description: "이 비디오는 삭제되었거나 비공개로 설정되었습니다. 다음 곡으로 자동 넘어갑니다.",
+        variant: "destructive",
+      });
+    } else {
+      // 기타 에러에 대한 일반 토스트 메시지
+      toast({
+        title: "비디오 재생 오류",
+        description: errorMessage,
+        variant: "destructive",
+      });
+    }
     
     // 에러 발생 시 부모 컴포넌트에 알림
     if (onVideoError) {
-      onVideoError(event.data);
+      onVideoError(errorCode);
     }
   }
 

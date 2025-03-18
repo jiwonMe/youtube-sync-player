@@ -174,7 +174,18 @@ export function useVideoControls({
   const handleVideoError = (error: any) => {
     console.error("YouTube Player error:", error);
     
-    // 사용자에게 에러 알림 (필요시 구현)
+    // 특정 에러 코드에 대한 처리
+    // 101, 150: 비디오 소유자가 임베딩을 허용하지 않음
+    // 100: 비디오를 찾을 수 없음 (삭제되었거나 비공개)
+    if (error === 101 || error === 150 || error === 100) {
+      console.log(`[VideoError] 재생 불가능한 비디오 감지 (에러 코드: ${error}), 다음 비디오로 자동 스킵합니다.`);
+      
+      // 다음 비디오로 자동 스킵
+      // 약간 지연을 두어 UI가 먼저 업데이트되도록 함
+      setTimeout(() => {
+        handleNextVideo(true);
+      }, 1000);
+    }
   };
   
   // 다음 비디오 재생 핸들러
