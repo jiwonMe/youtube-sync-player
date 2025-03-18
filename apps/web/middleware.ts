@@ -2,7 +2,17 @@ import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server"
 import { NextResponse } from "next/server"
 
 // Define public routes that don't require authentication
-const isPublicRoute = createRouteMatcher(["/", "/join-room(.*)", "/room/(.*)", "/api/(.*)", "/sign-in(.*)", "/sign-up(.*)"])
+// 후행 슬래시(trailing slash)를 고려한 공개 경로 패턴 정의
+const isPublicRoute = createRouteMatcher([
+  "/", 
+  "/join-room(.*)/", 
+  "/room/(.*)/", 
+  "/api/(.*)", 
+  "/sign-in/(.*)", 
+  "/sign-in",
+  "/sign-up/(.*)",
+  "/sign-up"
+])
 
 export default clerkMiddleware(async (auth, req) => {
   if (!isPublicRoute(req)) {
