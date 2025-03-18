@@ -304,14 +304,7 @@ export default function RoomClient({ roomId }: { roomId: string }) {
 
     // 플레이리스트 업데이트 리스너
     socketIo.on("playlist:update", (playlist) => {
-      setRoomState((prev) => ({
-        ...prev,
-        playlist,
-      }))
-    })
-
-    // 플레이리스트 재정렬 리스너
-    socketIo.on("playlist:reorder", (playlist) => {
+      console.log("[Socket 이벤트] playlist:update 수신");
       setRoomState((prev) => ({
         ...prev,
         playlist,
@@ -409,7 +402,6 @@ export default function RoomClient({ roomId }: { roomId: string }) {
       socketIo.off("autoplay:toggle")
       socketIo.off("video:change")
       socketIo.off("playlist:update")
-      socketIo.off("playlist:reorder")
       socketIo.off("chat:message")
       socketIo.off("user:joined")
       socketIo.off("user:left")
@@ -759,6 +751,7 @@ export default function RoomClient({ roomId }: { roomId: string }) {
                 setVideoUrl={setVideoUrl}
                 handleAddVideo={handleAddVideo}
                 isAddingVideo={isAddingVideo}
+                setRoomState={setRoomState}
               />
             )}
 
@@ -816,6 +809,7 @@ export default function RoomClient({ roomId }: { roomId: string }) {
                     handleAddVideo={handleAddVideo}
                     isAddingVideo={isAddingVideo}
                     isPlaying={roomState.isPlaying}
+                    setRoomState={setRoomState}
                   />
                 ) : showMobile === "users" ? (
                   <UsersPanel 
@@ -888,6 +882,7 @@ export default function RoomClient({ roomId }: { roomId: string }) {
                     handleAddVideo={handleAddVideo}
                     isAddingVideo={isAddingVideo}
                     isPlaying={roomState.isPlaying}
+                    setRoomState={setRoomState}
                   />
                 </TabsContent>
 

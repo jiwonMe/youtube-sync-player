@@ -286,13 +286,42 @@ export function useVideoControls({
   
   // 플레이리스트 순서 변경 핸들러 (드래그앤드롭)
   const handlePlaylistReorder = (result: any) => {
-    if (!socket || !isUserHost() || !result.destination) return;
+    if (!socket) {
+      console.error('[PlaylistReorder 오류] 소켓 연결이 없습니다');
+      return;
+    }
     
-    const items = Array.from(roomState.playlist);
-    const [removed] = items.splice(result.source.index, 1);
-    items.splice(result.destination.index, 0, removed);
+    if (!isUserHost()) {
+      console.error('[PlaylistReorder 오류] 호스트 권한이 없습니다');
+      return;
+    }
     
-    socket.emit("playlist:reorder", items);
+    if (!result.destination) {
+      console.log('[PlaylistReorder 무시] 목적지가 지정되지 않음');
+      return;
+    }
+    
+    try {
+      console.log(`[PlaylistReorder] 항목 이동: 인덱스 ${result.source.index} → ${result.destination.index}`);
+      
+      const items = Array.from(roomState.playlist);
+      const [removed] = items.splice(result.source.index, 1);
+      items.splice(result.destination.index, 0, removed);
+      
+      // 서버로 업데이트된 재생목록 전송
+      console.log('[PlaylistReorder] playlist:update 이벤트 발송');
+      socket.emit("playlist:update", items);
+      
+      // 로컬 상태 직접 업데이트 (서버 응답 대기하지 않음)
+      setRoomState(prev => ({
+        ...prev,
+        playlist: items
+      }));
+      
+      console.log('[PlaylistReorder] 로컬 상태 업데이트 완료');
+    } catch (error) {
+      console.error('[PlaylistReorder 오류]', error);
+    }
   };
   
   // 비디오 진행 바 클릭 핸들러 (시크 기능)

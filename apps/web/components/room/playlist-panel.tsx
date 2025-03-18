@@ -18,6 +18,7 @@ import {
   Music2
 } from "lucide-react"
 import { VideoItem } from "@/types/room"
+import { RoomState } from "@/types/room"
 import { AddVideoDialog } from "./add-video-dialog"
 
 /**
@@ -54,6 +55,8 @@ interface PlaylistPanelProps {
   isAddingVideo?: boolean
   /** 비디오 재생 중 여부 */
   isPlaying?: boolean
+  /** 룸 상태 설정 함수 (직접 상태 업데이트용) */
+  setRoomState?: React.Dispatch<React.SetStateAction<RoomState>>
 }
 
 /**
@@ -75,6 +78,7 @@ export function PlaylistPanel({
   handleAddVideo,
   isAddingVideo,
   isPlaying,
+  setRoomState,
 }: PlaylistPanelProps) {
   // 비디오 ID로부터 색상 생성
   const generateColorFromId = (id: string): string => {
@@ -201,25 +205,27 @@ export function PlaylistPanel({
                                         // 현재 플레이리스트에서 이 비디오의 실제 인덱스를 찾습니다
                                         const actualIndex = playlist.findIndex(v => v.id === video.id);
                                         if (actualIndex > 0) {
+                                          console.log(`[플레이리스트] 항목 위로 이동: "${video.title}", 현재 위치: ${actualIndex}`);
                                           const newPlaylist = [...playlist];
                                           [newPlaylist[actualIndex], newPlaylist[actualIndex - 1]] = 
                                             [newPlaylist[actualIndex - 1], newPlaylist[actualIndex]];
                                           
                                           // 서버에 변경사항 전송
                                           if (socket) {
-                                            socket.emit("playlist:reorder", newPlaylist);
+                                            console.log('[플레이리스트] playlist:update 이벤트 발송');
+                                            socket.emit("playlist:update", newPlaylist);
+                                            
+                                            // 로컬 상태 직접 업데이트 (서버 응답 대기 없이)
+                                            if (setRoomState) {
+                                              setRoomState((prev: RoomState) => ({
+                                                ...prev,
+                                                playlist: newPlaylist
+                                              }));
+                                              console.log('[플레이리스트] 로컬 상태 직접 업데이트');
+                                            }
+                                          } else {
+                                            console.error('[플레이리스트] 소켓 연결이 없어 재정렬할 수 없습니다');
                                           }
-                                          
-                                          // 로컬 상태 업데이트
-                                          handlePlaylistReorder({
-                                            source: { index: actualIndex, droppableId: 'playlist' },
-                                            destination: { index: actualIndex - 1, droppableId: 'playlist' },
-                                            draggableId: video.id,
-                                            type: 'DEFAULT',
-                                            mode: 'FLUID',
-                                            reason: 'DROP',
-                                            combine: null
-                                          });
                                         }
                                       }}
                                       disabled={playlist.findIndex(v => v.id === video.id) === 0}
@@ -235,18 +241,26 @@ export function PlaylistPanel({
                                         // 현재 플레이리스트에서 이 비디오의 실제 인덱스를 찾습니다
                                         const actualIndex = playlist.findIndex(v => v.id === video.id);
                                         if (actualIndex < playlist.length - 1) {
+                                          console.log(`[플레이리스트] 항목 아래로 이동: "${video.title}", 현재 위치: ${actualIndex}`);
                                           const newPlaylist = [...playlist];
-                                          [newPlaylist[actualIndex], newPlaylist[actualIndex + 1]] = [newPlaylist[actualIndex + 1], newPlaylist[actualIndex]];
-                                          if (handlePlaylistReorder) {
-                                            handlePlaylistReorder({
-                                              source: { index: actualIndex, droppableId: 'playlist' },
-                                              destination: { index: actualIndex + 1, droppableId: 'playlist' },
-                                              draggableId: video.id,
-                                              type: 'DEFAULT',
-                                              mode: 'FLUID',
-                                              reason: 'DROP',
-                                              combine: null
-                                            });
+                                          [newPlaylist[actualIndex], newPlaylist[actualIndex + 1]] = 
+                                            [newPlaylist[actualIndex + 1], newPlaylist[actualIndex]];
+                                          
+                                          // 서버에 변경사항 전송
+                                          if (socket) {
+                                            console.log('[플레이리스트] playlist:update 이벤트 발송');
+                                            socket.emit("playlist:update", newPlaylist);
+                                            
+                                            // 로컬 상태 직접 업데이트 (서버 응답 대기 없이)
+                                            if (setRoomState) {
+                                              setRoomState((prev: RoomState) => ({
+                                                ...prev,
+                                                playlist: newPlaylist
+                                              }));
+                                              console.log('[플레이리스트] 로컬 상태 직접 업데이트');
+                                            }
+                                          } else {
+                                            console.error('[플레이리스트] 소켓 연결이 없어 재정렬할 수 없습니다');
                                           }
                                         }
                                       }}

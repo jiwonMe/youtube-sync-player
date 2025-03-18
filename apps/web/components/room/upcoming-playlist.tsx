@@ -15,6 +15,7 @@ import {
   Music2
 } from "lucide-react"
 import { VideoItem } from "@/types/room"
+import { RoomState } from "@/types/room"
 import { AddVideoDialog } from "./add-video-dialog"
 
 /**
@@ -47,6 +48,8 @@ interface UpcomingPlaylistProps {
   handleAddVideo: () => Promise<void>
   /** 비디오 추가 중 상태 */
   isAddingVideo: boolean
+  /** 룸 상태 설정 함수 (직접 상태 업데이트용) */
+  setRoomState?: React.Dispatch<React.SetStateAction<RoomState>>
 }
 
 /**
@@ -65,7 +68,8 @@ export function UpcomingPlaylist({
   videoUrl,
   setVideoUrl,
   handleAddVideo,
-  isAddingVideo
+  isAddingVideo,
+  setRoomState
 }: UpcomingPlaylistProps) {
   // 다음 재생 예정 비디오 목록 (현재 재생 중인 비디오 제외)
   const upcomingVideos = playlist.filter(video => video.id !== currentVideo?.id);
@@ -172,19 +176,20 @@ export function UpcomingPlaylist({
                                     
                                     // 서버에 변경사항 전송
                                     if (socket) {
-                                      socket.emit("playlist:reorder", newPlaylist);
+                                      console.log('[UpcomingPlaylist] playlist:update 이벤트 발송');
+                                      socket.emit("playlist:update", newPlaylist);
+                                      
+                                      // 로컬 상태 직접 업데이트 (서버 응답 대기 없이)
+                                      if (setRoomState) {
+                                        setRoomState((prev: RoomState) => ({
+                                          ...prev,
+                                          playlist: newPlaylist
+                                        }));
+                                        console.log('[UpcomingPlaylist] 로컬 상태 직접 업데이트');
+                                      }
+                                    } else {
+                                      console.error('[UpcomingPlaylist] 소켓 연결이 없어 재정렬할 수 없습니다');
                                     }
-                                    
-                                    // 로컬 상태 업데이트
-                                    handlePlaylistReorder({
-                                      source: { index: actualIndex, droppableId: 'upcoming-playlist' },
-                                      destination: { index: actualIndex - 1, droppableId: 'upcoming-playlist' },
-                                      draggableId: `upcoming-${video.id}`,
-                                      type: 'DEFAULT',
-                                      mode: 'FLUID',
-                                      reason: 'DROP',
-                                      combine: null
-                                    });
                                   }
                                 }}
                                 disabled={playlist.findIndex(v => v.id === video.id) === 0}
@@ -206,19 +211,20 @@ export function UpcomingPlaylist({
                                     
                                     // 서버에 변경사항 전송
                                     if (socket) {
-                                      socket.emit("playlist:reorder", newPlaylist);
+                                      console.log('[UpcomingPlaylist] playlist:update 이벤트 발송');
+                                      socket.emit("playlist:update", newPlaylist);
+                                      
+                                      // 로컬 상태 직접 업데이트 (서버 응답 대기 없이)
+                                      if (setRoomState) {
+                                        setRoomState((prev: RoomState) => ({
+                                          ...prev,
+                                          playlist: newPlaylist
+                                        }));
+                                        console.log('[UpcomingPlaylist] 로컬 상태 직접 업데이트');
+                                      }
+                                    } else {
+                                      console.error('[UpcomingPlaylist] 소켓 연결이 없어 재정렬할 수 없습니다');
                                     }
-                                    
-                                    // 로컬 상태 업데이트
-                                    handlePlaylistReorder({
-                                      source: { index: actualIndex, droppableId: 'upcoming-playlist' },
-                                      destination: { index: actualIndex + 1, droppableId: 'upcoming-playlist' },
-                                      draggableId: `upcoming-${video.id}`,
-                                      type: 'DEFAULT',
-                                      mode: 'FLUID',
-                                      reason: 'DROP',
-                                      combine: null
-                                    });
                                   }
                                 }}
                                 disabled={playlist.findIndex(v => v.id === video.id) === playlist.length - 1}
