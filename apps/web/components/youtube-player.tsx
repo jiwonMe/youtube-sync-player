@@ -13,6 +13,7 @@ interface YouTubePlayerProps {
   isMuted: boolean
   playerRef?: React.MutableRefObject<any>
   onVideoError?: (errorCode: number) => void
+  hasPermission?: boolean
 }
 
 export function YouTubePlayer({
@@ -23,6 +24,7 @@ export function YouTubePlayer({
   isMuted,
   playerRef,
   onVideoError,
+  hasPermission = true,
 }: YouTubePlayerProps) {
   const internalPlayerRef = useRef<any>(null)
   const actualPlayerRef = playerRef || internalPlayerRef
@@ -39,6 +41,14 @@ export function YouTubePlayer({
   // 비디오 ID와 isPlaying 변경 감지를 위한 ref
   const previousVideoIdRef = useRef<string>(videoId)
   const isPlayingRef = useRef<boolean>(isPlaying)
+  
+  // 페이지 최초 로드 상태를 확인하기 위한 ref
+  const isFirstLoadRef = useRef<boolean>(true)
+
+  // 권한 없는 사용자의 로컬 동작 상태 추적을 위한 ref
+  const wasLocallyPausedRef = useRef<boolean>(false)
+  const lastSyncTimeRef = useRef<number>(0)
+  const localTimeStateRef = useRef<number>(0)
 
   // Handle player ready
   const onReady = (event: any) => {
@@ -250,23 +260,57 @@ export function YouTubePlayer({
     });
   }, [isMuted, isReady, isPlayerMounted]);
 
-  // Sync current time
+  // Sync current time - 시간 동기화 로직 강화
   useEffect(() => {
     if (!isReady || !isPlayerMounted) return;
     
     safePlayerCall((player) => {
       try {
         const currentPlayerTime = player.getCurrentTime() || 0;
-        // 시간 차이가 0.5초 이상일 때만 동기화 (너무 빈번한 동기화 방지)
-        if (Math.abs(currentPlayerTime - currentTime) > 0.5) {
-          console.log(`[시간 동기화] ${currentPlayerTime.toFixed(2)}s -> ${currentTime.toFixed(2)}s (차이: ${Math.abs(currentPlayerTime - currentTime).toFixed(2)}s)`);
+        localTimeStateRef.current = currentPlayerTime;
+        
+        // 권한이 없고 로컬에서 재생으로 전환된 경우 무조건 호스트 시간으로 동기화
+        if (!hasPermission && wasLocallyPausedRef.current && isPlaying) {
+          console.log(`[권한 없음 시간 동기화] 재생 시 호스트 시간으로 강제 동기화: ${currentPlayerTime.toFixed(2)}s -> ${currentTime.toFixed(2)}s`);
           player.seekTo(currentTime);
+          lastSyncTimeRef.current = Date.now();
+          wasLocallyPausedRef.current = false;
+          return;
+        }
+        
+        // 권한이 없는 경우 더 자주 동기화 (0.3초 차이)
+        const syncThreshold = !hasPermission ? 0.3 : 0.5;
+        
+        // 마지막 동기화 후 1초 이상 지났거나 시간 차이가 임계값 이상일 때 동기화
+        const timeSinceLastSync = Date.now() - lastSyncTimeRef.current;
+        const shouldSyncByTime = !hasPermission && timeSinceLastSync > 3000;
+        const shouldSyncByDiff = Math.abs(currentPlayerTime - currentTime) > syncThreshold;
+        
+        if (shouldSyncByDiff || shouldSyncByTime) {
+          console.log(`[시간 동기화] ${currentPlayerTime.toFixed(2)}s -> ${currentTime.toFixed(2)}s 
+          (차이: ${Math.abs(currentPlayerTime - currentTime).toFixed(2)}s, 
+          마지막 동기화 후 ${(timeSinceLastSync/1000).toFixed(1)}초 경과, 
+          권한: ${hasPermission ? "있음" : "없음"})`);
+          
+          player.seekTo(currentTime);
+          lastSyncTimeRef.current = Date.now();
         }
       } catch (err) {
         console.error("Error seeking:", err);
       }
     });
-  }, [currentTime, isReady, isPlayerMounted]);
+  }, [currentTime, isPlaying, isReady, isPlayerMounted, hasPermission]);
+
+  // isPlaying 외부 상태 변화 감지 (서버에서 받는 변경사항)
+  useEffect(() => {
+    // 외부에서 재생 상태가 변경됨
+    if (isPlayingRef.current !== isPlaying) {
+      // 재생 상태로 변경됐을 때 이전에 로컬 일시정지 플래그 초기화
+      if (isPlaying) {
+        wasLocallyPausedRef.current = false;
+      }
+    }
+  }, [isPlaying]);
 
   // 컴포넌트 언마운트 시 플레이어 참조 정리
   useEffect(() => {
@@ -352,26 +396,102 @@ export function YouTubePlayer({
   }
 
   return (
-    <YouTube
-      key={videoId} // 비디오 ID가 변경될 때 컴포넌트를 다시 마운트하여 깨끗한 상태로 시작
-      videoId={videoId}
-      opts={{
-        height: "100%",
-        width: "100%",
-        playerVars: {
-          autoplay: 1, // 자동 재생 활성화 (onReady에서 제어)
-          modestbranding: 1,
-          rel: 0,
-          showinfo: 0,
-          fs: 1, // Enable fullscreen button
-          controls: 0, // Hide controls, we'll use our own
-        },
-      }}
-      onReady={onReady}
-      onStateChange={handleStateChange}
-      onError={onError}
-      className="w-full h-full"
-    />
+    <div className="w-full h-full relative">
+      <YouTube
+        key={videoId} // 비디오 ID가 변경될 때 컴포넌트를 다시 마운트하여 깨끗한 상태로 시작
+        videoId={videoId}
+        opts={{
+          height: "100%",
+          width: "100%",
+          playerVars: {
+            autoplay: 1, // 자동 재생 활성화 (onReady에서 제어)
+            modestbranding: 1,
+            rel: 0,
+            showinfo: 0,
+            fs: 1, // Enable fullscreen button
+            controls: 0, // Hide controls, we'll use our own
+            mute: 1, // 최초 로드시 음소거 상태로 시작
+            disablekb: 1, // 키보드 컨트롤 비활성화
+            iv_load_policy: 3, // 동영상 주석 비활성화
+          },
+        }}
+        onReady={(event) => {
+          onReady(event);
+          // onReady 이벤트가 발생하면 최초 로드가 아님을 표시
+          setTimeout(() => {
+            isFirstLoadRef.current = false;
+          }, 500);
+        }}
+        onStateChange={handleStateChange}
+        onError={onError}
+        className="w-full h-full"
+      />
+      {/* 비디오 위에 투명한 오버레이 추가하여 마우스 이벤트 차단 */}
+      <div 
+        className={`absolute inset-0 z-10 ${hasPermission || isFirstLoadRef.current ? 'cursor-pointer' : 'cursor-default'}`}
+        onClick={(e) => {
+          e.preventDefault();
+          
+          // 최초 로드 상태가 아니고 권한이 없으면 클릭 무시
+          if (!isFirstLoadRef.current && !hasPermission) {
+            console.log("[오버레이 클릭] 권한 없음: 클릭 무시");
+            return;
+          }
+          
+          // 클릭 시 재생/일시정지 토글
+          safePlayerCall((player) => {
+            const currentPlayerState = player.getPlayerState();
+            const isCurrentlyPlaying = currentPlayerState === 1;
+            
+            if (isCurrentlyPlaying) {
+              console.log("[오버레이 클릭] 일시정지 명령 실행");
+              player.pauseVideo();
+              setLastAction("pause");
+              
+              // 권한이 없는 경우 로컬 일시정지 플래그 설정
+              if (!hasPermission) {
+                wasLocallyPausedRef.current = true;
+                localTimeStateRef.current = player.getCurrentTime() || 0;
+                console.log(`[오버레이 클릭] 권한 없음: 로컬 일시정지 상태 기록 (현재 시간: ${localTimeStateRef.current.toFixed(2)}s)`);
+              }
+              
+              // 최초 로드시 소켓 전파하지 않음
+              if (!isFirstLoadRef.current) {
+                console.log("[오버레이 클릭] 소켓 이벤트 전파");
+                onStateChange({ data: 2 });
+              } else {
+                console.log("[오버레이 클릭] 최초 로드시 소켓 이벤트 무시");
+              }
+            } else {
+              console.log("[오버레이 클릭] 재생 명령 실행");
+              
+              // 권한이 없고 로컬에서 일시정지했다가 재생하는 경우 호스트 시간으로 동기화
+              if (!hasPermission && wasLocallyPausedRef.current) {
+                const localTime = localTimeStateRef.current;
+                console.log(`[오버레이 클릭] 권한 없음: 호스트 시간으로 강제 동기화 (로컬: ${localTime.toFixed(2)}s -> 호스트: ${currentTime.toFixed(2)}s)`);
+                player.seekTo(currentTime);
+                lastSyncTimeRef.current = Date.now(); // 동기화 시간 기록
+              }
+              
+              player.playVideo();
+              setLastAction("play");
+              
+              // 최초 로드시 소켓 전파하지 않음
+              if (!isFirstLoadRef.current) {
+                console.log("[오버레이 클릭] 소켓 이벤트 전파");
+                onStateChange({ data: 1 });
+              } else {
+                console.log("[오버레이 클릭] 최초 로드시 소켓 이벤트 무시");
+                // 최초 로드 상태 해제
+                isFirstLoadRef.current = false;
+              }
+            }
+          });
+        }}
+        onDoubleClick={(e) => e.preventDefault()}
+        style={{ pointerEvents: "all" }}
+      />
+    </div>
   )
 }
 

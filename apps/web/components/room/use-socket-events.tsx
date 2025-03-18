@@ -222,6 +222,41 @@ export function useSocketEvents({
           console.log(`[Sync 완료] 동기화 처리 완료`);
         } else {
           console.log(`[Sync 비디오 불일치] 현재 비디오(${roomState.currentVideo?.videoId})와 서버 비디오(${data.videoId})가 일치하지 않음`);
+          
+          // 서버의 비디오로 동기화
+          if (data.videoId && data.videoId !== roomState.currentVideo?.videoId) {
+            console.log(`[Sync 비디오 변경] 서버 비디오(${data.videoId})로 변경 시작`);
+            
+            // 비디오 변경 중 표시
+            setIsVideoChanging(true);
+            
+            // 룸 상태 업데이트 (비디오 ID 변경)
+            setRoomState((prev) => {
+              // 현재 비디오 정보가 없는 경우, 새 비디오 정보 생성
+              const updatedVideo = prev.currentVideo 
+                ? { ...prev.currentVideo, videoId: data.videoId }
+                : { 
+                    id: `temp-${Date.now()}`, // 임시 ID 생성
+                    videoId: data.videoId, 
+                    title: "불러오는 중...", 
+                    thumbnailUrl: `https://img.youtube.com/vi/${data.videoId}/default.jpg` // 기본 썸네일
+                  };
+                
+              return {
+                ...prev,
+                isPlaying: data.isPlaying,
+                currentTime: data.currentTime,
+                currentVideo: updatedVideo
+              };
+            });
+            
+            console.log(`[Sync 비디오 변경] 비디오 ID와 시간 동기화 완료, 비디오 변경 후 ${data.currentTime.toFixed(2)}초로 설정`);
+            
+            // 비디오 로딩 시간 고려하여 짧은 지연 후 비디오 변경 상태 해제
+            setTimeout(() => {
+              setIsVideoChanging(false);
+            }, 1000);
+          }
         }
       } catch (err) {
         console.error("Error handling sync event:", err);
