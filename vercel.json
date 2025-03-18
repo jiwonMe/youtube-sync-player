@@ -3,7 +3,10 @@
   "builds": [
     {
       "src": "apps/web/package.json",
-      "use": "@vercel/next"
+      "use": "@vercel/next",
+      "config": {
+        "rootDir": "apps/web"
+      }
     }
   ],
   "buildCommand": "pnpm turbo run build --filter=web",
