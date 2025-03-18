@@ -109,10 +109,10 @@ export function AddVideoDialog({
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Youtube className="h-5 w-5 text-red-500" />
-            YouTube 비디오 추가
+            Add YouTube Video
           </DialogTitle>
           <DialogDescription>
-            플레이리스트에 추가할 YouTube 또는 YouTube Music 비디오 URL을 입력하세요.
+            Enter a YouTube or YouTube Music video URL to add to the playlist.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4">
@@ -121,7 +121,7 @@ export function AddVideoDialog({
               <LinkIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 ref={inputRef}
-                placeholder="https://www.youtube.com/watch?v=... 또는 https://music.youtube.com/..."
+                placeholder="https://www.youtube.com/watch?v=... or https://music.youtube.com/..."
                 value={videoUrl}
                 onChange={handleUrlChange}
                 onKeyDown={handleKeyDown}
@@ -130,12 +130,12 @@ export function AddVideoDialog({
             </div>
           </div>
           <div className="text-xs text-muted-foreground">
-            <p>지원되는 형식:</p>
+            <p>Supported formats:</p>
             <ul className="list-disc pl-5 mt-1 space-y-1">
-              <li>유튜브 영상 URL (https://www.youtube.com/watch?v=...)</li>
-              <li>짧은 유튜브 URL (https://youtu.be/...)</li>
-              <li>유튜브 임베드 URL (https://www.youtube.com/embed/...)</li>
-              <li>유튜브 뮤직 URL (https://music.youtube.com/...)</li>
+              <li>YouTube video URL (https://www.youtube.com/watch?v=...)</li>
+              <li>Short YouTube URL (https://youtu.be/...)</li>
+              <li>YouTube embed URL (https://www.youtube.com/embed/...)</li>
+              <li>YouTube Music URL (https://music.youtube.com/...)</li>
             </ul>
           </div>
         </div>
@@ -144,14 +144,14 @@ export function AddVideoDialog({
             variant="ghost" 
             onClick={() => setShowAddVideoDialog(false)}
             className="sm:hidden">
-            취소
+            Cancel
           </Button>
           <div className="flex gap-2">
             <Button 
               variant="outline" 
               onClick={() => setShowAddVideoDialog(false)}
               className="hidden sm:inline-flex">
-              취소
+              Cancel
             </Button>
             <Button 
               onClick={processAndAddVideo} 
@@ -161,9 +161,9 @@ export function AddVideoDialog({
               {isAddingVideo ? (
                 <>
                   <span className="animate-spin h-4 w-4 mr-2 border-2 border-white border-t-transparent rounded-full"></span>
-                  추가 중...
+                  Adding...
                 </>
-              ) : "비디오 추가"}
+              ) : "Add Video"}
             </Button>
           </div>
         </DialogFooter>
