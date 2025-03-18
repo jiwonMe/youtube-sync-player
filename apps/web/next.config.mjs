@@ -16,8 +16,6 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
-  // Output standalone for better compatibility
-  output: 'standalone',
   // Disable experimental features that might cause issues
   experimental: {},
   // Clerk configuration
