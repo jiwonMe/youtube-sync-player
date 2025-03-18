@@ -35,6 +35,7 @@ export function Navbar() {
   const navItems: NavItem[] = [
     { href: "/", label: "Home", icon: <Home className="h-4 w-4" /> },
     { href: "/create-room", label: "Create Room", icon: <PlusCircle className="h-4 w-4" /> },
+    { href: "/rooms", label: "Browse Rooms", icon: <Youtube className="h-4 w-4" /> },
     { href: "/join-room", label: "Join Room", icon: <LogIn className="h-4 w-4" /> },
     { href: "/profile", label: "Profile", icon: <User className="h-4 w-4" /> },
   ]

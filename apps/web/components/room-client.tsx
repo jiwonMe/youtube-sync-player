@@ -18,6 +18,8 @@ import {
   Crown,
   Plus,
   Lock,
+  Copy,
+  Check,
 } from "lucide-react"
 import { DropResult } from "@hello-pangea/dnd"
 
@@ -78,6 +80,7 @@ export default function RoomClient({ roomId }: { roomId: string }) {
   const [videoUrl, setVideoUrl] = useState("")
   const [isAddingVideo, setIsAddingVideo] = useState(false)
   const [copySuccess, setCopySuccess] = useState(false)
+  const [copyRoomCodeSuccess, setCopyRoomCodeSuccess] = useState(false)
   const [isVideoChanging, setIsVideoChanging] = useState(false)
   const [isPasswordProtected, setIsPasswordProtected] = useState(false)
   const [isPasswordVerified, setIsPasswordVerified] = useState(false)
@@ -508,6 +511,18 @@ export default function RoomClient({ roomId }: { roomId: string }) {
       setTimeout(() => setCopySuccess(false), 2000)
     }
   }
+  
+  // 방 코드 복사
+  const handleCopyRoomCode = () => {
+    navigator.clipboard.writeText(roomId)
+    setCopyRoomCodeSuccess(true)
+    setTimeout(() => setCopyRoomCodeSuccess(false), 2000)
+    
+    toast({
+      title: "방 코드가 복사되었습니다",
+      description: "친구에게 공유하여 함께 시청해보세요",
+    })
+  }
 
   // 자동 재생 토글 핸들러
   const handleToggleAutoplay = () => {
@@ -601,8 +616,40 @@ export default function RoomClient({ roomId }: { roomId: string }) {
               )}
             </Badge>
           </div>
+          
+          {/* 방 코드 표시 및 복사 버튼 */}
+          <div className="hidden sm:flex items-center bg-background/80 rounded-md border px-2 py-1 mr-2">
+            <span className="text-xs font-medium mr-2">방 코드:</span>
+            <code className="text-xs font-mono bg-muted px-1 py-0.5 rounded">{roomId}</code>
+            <Button 
+              size="icon" 
+              variant="ghost" 
+              className="h-6 w-6 ml-1" 
+              onClick={handleCopyRoomCode}
+              title="방 코드 복사"
+            >
+              {copyRoomCodeSuccess ? (
+                <Check className="h-3 w-3 text-green-500" />
+              ) : (
+                <Copy className="h-3 w-3" />
+              )}
+            </Button>
+          </div>
 
           <div className="flex items-center gap-2">
+            {/* 모바일에서만 보이는 방 코드 복사 버튼 */}
+            <Button 
+              size="sm" 
+              variant="outline" 
+              onClick={handleCopyRoomCode} 
+              className="h-8 sm:hidden"
+              title="방 코드 복사"
+            >
+              <Copy className="h-4 w-4 mr-2" />
+              <span>코드</span>
+              {copyRoomCodeSuccess && <Badge className="ml-2 bg-green-500 h-5 text-[10px]">Copied!</Badge>}
+            </Button>
+            
             <Button size="sm" variant="outline" onClick={handleShareRoom} className="h-8">
               <Share className="h-4 w-4 mr-2" />
               <span className="hidden sm:inline-block">Share</span>
@@ -864,4 +911,3 @@ export default function RoomClient({ roomId }: { roomId: string }) {
     </>
   )
 }
-
