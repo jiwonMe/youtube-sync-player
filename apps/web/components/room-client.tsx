@@ -69,7 +69,10 @@ export default function RoomClient({ roomId }: { roomId: string }) {
   const { user, isSignedIn, isLoaded } = useUser()
   const { toast } = useToast()
   const playerRef = useRef<any>(null)
-
+  
+  // 모바일 감지
+  const [isMobile, setIsMobile] = useState(false)
+  
   // 기본 상태
   const [socket, setSocket] = useState<Socket | null>(null)
   const [roomState, setRoomState] = useState<RoomState>({
@@ -507,6 +510,21 @@ export default function RoomClient({ roomId }: { roomId: string }) {
     handleRemoveVideo(videoId);
   };
 
+  // 모바일 감지 effect
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768)
+    }
+    
+    // 초기 체크
+    checkMobile()
+    
+    // 리사이즈시 체크
+    window.addEventListener('resize', checkMobile)
+    
+    return () => window.removeEventListener('resize', checkMobile)
+  }, [])
+
   // 비밀번호 보호된 방이고, 아직 인증되지 않은 경우 로딩 상태 표시
   if (isPasswordProtected && !isPasswordVerified) {
     return (
@@ -633,22 +651,41 @@ export default function RoomClient({ roomId }: { roomId: string }) {
           {/* 비디오 플레이어 섹션 */}
           <div className="flex-1 flex flex-col h-full overflow-hidden">
             {/* 비디오 플레이어 */}
-            <div className="relative bg-black aspect-video">
+            <div className={`relative bg-black ${isMobile ? "h-[180px] md:h-[220px]" : "aspect-video"}`}>
               {isLoading ? (
                 <div className="absolute inset-0 flex items-center justify-center">
                   <Skeleton className="h-full w-full" />
                 </div>
               ) : roomState.currentVideo ? (
                 <>
-                  <YouTubePlayer
-                    videoId={roomState.currentVideo.videoId}
-                    isPlaying={roomState.isPlaying}
-                    currentTime={roomState.currentTime}
-                    onStateChange={handlePlayerStateChange}
-                    isMuted={isMuted}
-                    playerRef={playerRef}
-                    onVideoError={handleVideoError}
-                  />
+                  {isMobile ? (
+                    // 모바일에서는 플레이어 대신 썸네일만 표시
+                    <div className="absolute inset-0 flex flex-col items-center justify-center bg-zinc-900">
+                      <div className="px-4 py-2 flex flex-col items-center justify-center">
+                        <img 
+                          src={`https://img.youtube.com/vi/${roomState.currentVideo.videoId}/mqdefault.jpg`}
+                          alt={roomState.currentVideo.title}
+                          className="w-[150px] sm:w-[180px] rounded-md"
+                        />
+                        <p className="text-white text-xs mt-2 text-center line-clamp-1">
+                          {roomState.currentVideo.title}
+                        </p>
+                        <div className="inline-flex items-center justify-center mt-1 px-2 py-0.5 rounded-full text-[10px] text-white bg-zinc-800">
+                          {roomState.isPlaying ? "▶ 재생 중" : "❚❚ 일시 정지"}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <YouTubePlayer
+                      videoId={roomState.currentVideo.videoId}
+                      isPlaying={roomState.isPlaying}
+                      currentTime={roomState.currentTime}
+                      onStateChange={handlePlayerStateChange}
+                      isMuted={isMuted}
+                      playerRef={playerRef}
+                      onVideoError={handleVideoError}
+                    />
+                  )}
                   {isVideoChanging && (
                     <div className="absolute inset-0 bg-black/70 flex items-center justify-center z-10">
                       <div className="text-center">
@@ -676,7 +713,24 @@ export default function RoomClient({ roomId }: { roomId: string }) {
                 </div>
               )}
             </div>
-
+            
+            {/* 모바일 환경일 때 YouTube 링크 버튼 */}
+            {isMobile && roomState.currentVideo && (
+              <div className="bg-muted/30 border-t border-b flex justify-center">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    window.open(`https://www.youtube.com/watch?v=${roomState.currentVideo?.videoId}`, '_blank');
+                  }}
+                  className="w-full py-1 text-xs flex items-center justify-center"
+                >
+                  <Youtube className="h-4 w-4 mr-1 text-red-600" />
+                  YouTube에서 보기
+                </Button>
+              </div>
+            )}
+            
             {/* 비디오 컨트롤 */}
             <VideoControls
               currentVideo={roomState.currentVideo}
