@@ -12,7 +12,26 @@ const inter = Inter({ subsets: ["latin"] })
 export const metadata = {
   title: "rtB Sync",
   description: "Watch videos together with friends in sync",
-  generator: 'v0.dev'
+  generator: 'v0.dev',
+  openGraph: {
+    title: "rtB Sync",
+    description: "Watch videos together with friends in sync",
+    images: [
+      {
+        url: "/og-image.png",
+        width: 1200,
+        height: 630,
+        alt: "rtB Sync - YouTube Sync Player"
+      }
+    ],
+    type: "website"
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "rtB Sync",
+    description: "Watch videos together with friends in sync",
+    images: ["/og-image.png"]
+  }
 }
 
 export default function RootLayout({

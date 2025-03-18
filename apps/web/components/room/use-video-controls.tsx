@@ -67,6 +67,18 @@ export function useVideoControls({
       console.log(`[Player 상태 이벤트] 상태: ${e.data} (${stateNames[e.data as keyof typeof stateNames] || 'unknown'}), isPlaying: ${roomState.isPlaying}`);
       
       switch (e.data) {
+        case 0: // 비디오 종료
+          console.log('[비디오 종료] 비디오 재생이 끝났습니다.');
+          
+          // 자동 재생이 활성화되어 있으면 다음 비디오 재생
+          if (roomState.autoplay) {
+            console.log('[자동 재생] 자동 재생이 활성화되어 있어 다음 비디오로 넘어갑니다.');
+            handleNextVideo();
+          } else {
+            console.log('[자동 재생 꺼짐] 자동 재생이 비활성화되어 있어 다음 비디오로 넘어가지 않습니다.');
+          }
+          break;
+          
         case 1: // 재생 시작
           if (!roomState.isPlaying) {
             console.log(`[소켓 이벤트 발생] player:play 이벤트 발송`);
@@ -282,7 +294,20 @@ export function useVideoControls({
   const handleToggleAutoplay = () => {
     if (!socket || !isUserHost()) return;
     
-    socket.emit("autoplay:toggle", !roomState.autoplay);
+    console.log(`[Autoplay] 자동 재생 토글: ${roomState.autoplay} → ${!roomState.autoplay}`);
+    
+    // 현재 재생 상태 및 시간 정보와 함께 전송
+    socket.emit("autoplay:toggle", {
+      isPlaying: roomState.isPlaying,
+      currentTime: playerRef.current?.getCurrentTime() || 0,
+      autoplay: !roomState.autoplay
+    });
+    
+    // 로컬 상태 즉시 업데이트
+    setRoomState(prev => ({
+      ...prev,
+      autoplay: !prev.autoplay
+    }));
   };
   
   // 플레이리스트 순서 변경 핸들러 (드래그앤드롭)

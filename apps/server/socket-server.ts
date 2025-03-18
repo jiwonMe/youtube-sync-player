@@ -533,7 +533,7 @@ io.on("connection", (socket) => {
   socket.on("autoplay:toggle", (data: { isPlaying: boolean; currentTime: number; autoplay: boolean }) => {
     if (!room) return;
     
-    // 자동 재생 설정 업데이트
+    // 자동 재생 설정 업데이트 - 수정: autoplay 값을 그대로 사용
     room.autoplay = data.autoplay;
     room.isPlaying = data.isPlaying;
     room.currentTime = data.currentTime;
