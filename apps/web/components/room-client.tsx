@@ -17,6 +17,7 @@ import {
   Settings,
   Crown,
   Plus,
+  Lock,
 } from "lucide-react"
 import { DropResult } from "@hello-pangea/dnd"
 
@@ -36,7 +37,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 
-import { connectToRoom, extractYouTubeId, fetchVideoDetails } from "@/utils/room-utils"
+import { connectToRoom } from "@/services/socket-service"
+import { extractYouTubeId, fetchVideoDetails, verifyRoomPassword } from "../utils/room-utils"
 import { RoomState, VideoItem } from "@/types/room"
 import { ChatPanel } from "@/components/room/chat-panel"
 import { PlaylistPanel } from "@/components/room/playlist-panel"
@@ -44,6 +46,7 @@ import { UsersPanel } from "@/components/room/users-panel"
 import { UpcomingPlaylist } from "@/components/room/upcoming-playlist"
 import { AddVideoDialog } from "@/components/room/add-video-dialog"
 import { VideoControls } from "@/components/room/video-controls"
+import { PasswordDialog } from "@/components/room/password-dialog"
 
 /**
  * 방 클라이언트 컴포넌트
@@ -76,13 +79,80 @@ export default function RoomClient({ roomId }: { roomId: string }) {
   const [isAddingVideo, setIsAddingVideo] = useState(false)
   const [copySuccess, setCopySuccess] = useState(false)
   const [isVideoChanging, setIsVideoChanging] = useState(false)
+  const [isPasswordProtected, setIsPasswordProtected] = useState(false)
+  const [isPasswordVerified, setIsPasswordVerified] = useState(false)
+  const [showPasswordDialog, setShowPasswordDialog] = useState(false)
+  const [roomInfo, setRoomInfo] = useState<{ roomName: string; isPasswordProtected: boolean }>({
+    roomName: "",
+    isPasswordProtected: false,
+  })
 
   const playerRef = useRef<any>(null)
   const chatEndRef = useRef<HTMLDivElement>(null)
 
+  // 룸 정보 확인 (비밀번호 보호 여부 체크)
+  useEffect(() => {
+    const checkRoomProtection = async () => {
+      try {
+        const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3003';
+        const response = await fetch(`${socketUrl}/rooms/by-name?name=${roomId}`);
+        
+        if (!response.ok) {
+          throw new Error('Failed to fetch room info');
+        }
+        
+        const data = await response.json();
+        
+        if (data.exists) {
+          setRoomInfo({
+            roomName: data.roomName || "Room",
+            isPasswordProtected: data.isPasswordProtected
+          });
+          
+          setIsPasswordProtected(data.isPasswordProtected);
+          
+          // 비밀번호 보호된 방이면 비밀번호 입력 대화상자 표시
+          if (data.isPasswordProtected) {
+            setShowPasswordDialog(true);
+          } else {
+            // 비밀번호 보호되지 않은 방이면 바로 연결
+            setIsPasswordVerified(true);
+          }
+        }
+      } catch (error) {
+        console.error("Failed to check room protection:", error);
+        // 에러가 발생해도 일단 연결 시도
+        setIsPasswordVerified(true);
+      }
+    };
+    
+    checkRoomProtection();
+  }, [roomId]);
+
+  // 비밀번호 인증 함수
+  const handlePasswordVerify = async (password: string): Promise<boolean> => {
+    try {
+      const success = await verifyRoomPassword(roomId, password);
+      
+      if (success) {
+        setIsPasswordVerified(true);
+        setShowPasswordDialog(false);
+        toast({
+          title: "인증 성공",
+          description: "방에 입장합니다.",
+        });
+      }
+      
+      return success;
+    } catch (error) {
+      console.error("Failed to verify password:", error);
+      return false;
+    }
+  };
+
   // Connect to socket when component mounts
   useEffect(() => {
-    if (!isLoaded) return
+    if (!isLoaded || !isPasswordVerified) return;
 
     // 게스트 ID 생성 (인증되지 않은 경우)
     const userId = isSignedIn ? user.id : `guest-${Math.random().toString(36).substring(2, 9)}`
@@ -188,7 +258,7 @@ export default function RoomClient({ roomId }: { roomId: string }) {
         socketIo.disconnect()
       }
     }
-  }, [roomId, user, isSignedIn, isLoaded])
+  }, [roomId, user, isSignedIn, isLoaded, isPasswordVerified])
 
   // 새 메시지 도착 시 채팅 스크롤 아래로 이동
   useEffect(() => {
@@ -473,11 +543,33 @@ export default function RoomClient({ roomId }: { roomId: string }) {
     }
   }
 
+  // 비밀번호 입력 취소 처리
+  const handlePasswordCancel = () => {
+    // 취소 시 이전 페이지로 이동
+    window.history.back();
+  };
+
   // 현재 사용자가 방장인지 여부
   const isHost = isSignedIn && user?.id === roomState.hostId
   const hasNextVideo = roomState.currentVideo 
     ? roomState.playlist.findIndex((v) => v.id === roomState.currentVideo?.id) < roomState.playlist.length - 1
     : false
+
+  // 비밀번호 보호된 방이고, 아직 인증되지 않은 경우 로딩 상태 표시
+  if (isPasswordProtected && !isPasswordVerified) {
+    return (
+      <>
+        <div className="flex items-center justify-center h-[calc(100vh-4rem)]">
+          <PasswordDialog 
+            isOpen={showPasswordDialog}
+            onClose={handlePasswordCancel}
+            onVerify={handlePasswordVerify}
+            roomName={roomInfo.roomName}
+          />
+        </div>
+      </>
+    );
+  }
 
   return (
     <>
@@ -492,6 +584,9 @@ export default function RoomClient({ roomId }: { roomId: string }) {
                 <>
                   <Crown className="h-4 w-4 mr-2 text-amber-500 hidden sm:inline-block" />
                   {roomState.roomName}
+                  {isPasswordProtected && (
+                    <Lock className="h-4 w-4 ml-2 text-amber-500" />
+                  )}
                 </>
               )}
             </h1>

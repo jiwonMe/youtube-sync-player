@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Crown, MessageSquare, Send, Smile } from "lucide-react"
-import { formatTimestamp } from "@/utils/room-utils"
+import { formatTimestamp } from "../../utils/room-utils"
 import { ChatMessage } from "@/types/room"
 
 /**

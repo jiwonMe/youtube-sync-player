@@ -16,6 +16,7 @@ type RoomState = {
   currentTime: number
   messages: ChatMessage[]
   isPasswordProtected: boolean
+  password?: string // 비밀번호 필드 추가
   createdAt: number
   autoplay: boolean // 자동 재생 설정 추가
 }
@@ -144,6 +145,7 @@ const httpServer = createServer((req, res) => {
           currentTime: 0,
           messages: [],
           isPasswordProtected,
+          password: isPasswordProtected ? password : undefined, // 비밀번호가 설정된 경우에만 저장
           createdAt: Date.now(),
           autoplay: true,
         });
@@ -157,6 +159,54 @@ const httpServer = createServer((req, res) => {
         console.error("Error creating room:", error);
         res.writeHead(500, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: "Failed to create room" }));
+      }
+    });
+    return;
+  }
+
+  // 비밀번호 확인 엔드포인트 추가
+  if (parsedUrl.pathname === "/rooms/verify-password" && req.method === "POST") {
+    let body = "";
+    req.on("data", chunk => {
+      body += chunk.toString();
+    });
+    req.on("end", () => {
+      try {
+        const { roomId, password } = JSON.parse(body);
+        
+        if (!roomId) {
+          res.writeHead(400, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Room ID is required" }));
+          return;
+        }
+        
+        const room = rooms.get(roomId);
+        
+        if (!room) {
+          res.writeHead(404, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Room not found" }));
+          return;
+        }
+        
+        if (!room.isPasswordProtected) {
+          // 비밀번호가 필요없는 방이면 바로 성공 응답
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ success: true }));
+          return;
+        }
+        
+        // 비밀번호 검증
+        const isPasswordCorrect = room.password === password;
+        
+        res.writeHead(isPasswordCorrect ? 200 : 403, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ 
+          success: isPasswordCorrect,
+          message: isPasswordCorrect ? "Password correct" : "Incorrect password" 
+        }));
+      } catch (error) {
+        console.error("Error verifying password:", error);
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Failed to verify password" }));
       }
     });
     return;

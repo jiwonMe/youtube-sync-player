@@ -37,9 +37,18 @@ export type RoomState = {
   currentTime: number
   messages: ChatMessage[]
   isPasswordProtected: boolean
+  autoplay?: boolean
 }
 
-// Socket connection function
+/**
+ * 소켓 서버에 연결하는 함수
+ * 
+ * @param roomId - 방 ID
+ * @param userId - 사용자 ID
+ * @param userName - 사용자 이름
+ * @param userImage - 사용자 프로필 이미지
+ * @returns Socket 객체
+ */
 export function connectToRoom(roomId: string, userId: string, userName: string, userImage = ""): Socket {
   // Use mock socket if no SOCKET_URL is provided
   if (!process.env.NEXT_PUBLIC_SOCKET_URL) {

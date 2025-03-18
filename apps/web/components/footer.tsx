@@ -12,6 +12,9 @@ export function Footer() {
         <div className="text-center text-sm text-muted-foreground md:text-left">
           &copy; {new Date().getFullYear()} rtB Sync. All rights reserved.
         </div>
+        <div className="text-center text-sm text-muted-foreground md:text-left">
+          아이디어 제공: 락장놀 빡상진
+        </div>
         <div className="flex gap-4 text-sm text-muted-foreground">
           <Link 
             href="/privacy-policy" 

@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { Play, Pause, SkipForward, Volume2, VolumeX, Repeat, Plus } from "lucide-react"
-import { formatTime } from "@/utils/room-utils"
+import { formatTime } from "../../utils/room-utils"
 import { VideoItem } from "@/types/room"
 import { AddVideoDialog } from "./add-video-dialog"
 
