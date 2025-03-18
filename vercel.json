@@ -4,7 +4,7 @@
   "outputDirectory": "apps/web/.next",
   "installCommand": "pnpm install",
   "framework": "nextjs",
-  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- apps/web || exit 0",
+  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- ./apps/web || exit 0",
   "regions": ["iad1"],
   "git": {
     "deploymentEnabled": {
