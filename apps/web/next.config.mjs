@@ -20,6 +20,8 @@ const nextConfig = {
   output: 'standalone',
   // Disable experimental features that might cause issues
   experimental: {},
+  // Clerk configuration
+  transpilePackages: ["@clerk/nextjs"],
   // Ensure proper build ID generation
   generateBuildId: async () => {
     return 'build-' + new Date().getTime();

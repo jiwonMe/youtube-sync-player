@@ -9,11 +9,11 @@ import { NextResponse } from "next/server";
  */
 export async function GET() {
   try {
-    // currentUser()를 사용하여 사용자 정보 가져오기 (auth() 대신)
+    // currentUser()를 사용하여 사용자 정보 가져오기
     const user = await currentUser();
     
     if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ error: "Unauthorized - User not found" }, { status: 401 });
     }
 
     // Clerk에서 사용자의 OAuth 토큰 가져오기

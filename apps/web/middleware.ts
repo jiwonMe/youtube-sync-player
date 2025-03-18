@@ -15,7 +15,7 @@ const isPublicRoute = createRouteMatcher([
 ]);
 
 // Clerk middleware 구현
-export default clerkMiddleware(async (auth, req: NextRequest) => {
+export default clerkMiddleware((auth, req) => {
   // 정적 파일은 항상 공개
   if (
     req.nextUrl.pathname.startsWith("/_next") ||
@@ -33,7 +33,8 @@ export default clerkMiddleware(async (auth, req: NextRequest) => {
   // /api/youtube/token 경로는 인증 필요
   if (req.nextUrl.pathname.startsWith("/api/youtube/token")) {
     try {
-      await auth.protect();
+      // auth.protect() 사용
+      const authState = auth.protect();
       return NextResponse.next();
     } catch (error) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -42,7 +43,7 @@ export default clerkMiddleware(async (auth, req: NextRequest) => {
 
   // 그 외 인증이 필요한 경로는 보호
   try {
-    await auth.protect();
+    const authState = auth.protect();
     return NextResponse.next();
   } catch (error) {
     return NextResponse.redirect(new URL("/sign-in", req.url));
@@ -50,12 +51,11 @@ export default clerkMiddleware(async (auth, req: NextRequest) => {
 });
 
 // 이 middleware는 모든 라우트에 적용됩니다
-// 특히 /api/youtube/token 경로를 반드시 포함하도록 합니다
 export const config = {
   matcher: [
     // 정적 파일 및 이미지를 제외한 모든 경로
     "/((?!_next/static|_next/image|favicon.ico).*)",
-    // API 경로 명시적 포함 (특히 /api/youtube/token)
-    "/api/(.*)"
+    // API 경로 명시적 포함
+    "/api/:path*"
   ]
 }
