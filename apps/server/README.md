@@ -64,7 +64,8 @@ apps/server/
 │   │   ├── playlist.ts # 재생목록 핸들러
 │   │   └── room.ts    # 방 관리 핸들러
 │   ├── services/      # 서비스 레이어
-│   │   └── roomStore.ts # 방 데이터 저장소
+│   │   ├── roomStore.ts      # 메모리 기반 방 데이터 저장소 (더 이상 사용되지 않음)
+│   │   └── roomSupabaseStore.ts # Supabase 기반 방 데이터 저장소 (현재 사용 중)
 │   ├── types/         # 타입 정의
 │   ├── utils/         # 유틸리티 함수
 │   └── server.ts      # 메인 서버 파일
@@ -73,6 +74,13 @@ apps/server/
 ├── package.json       # 의존성 및 스크립트
 └── tsconfig.json      # TypeScript 설정
 ```
+
+> **중요 업데이트**: 2024년 3월 19일부터 `roomStore.ts`(메모리 기반 저장소)는 `roomSupabaseStore.ts`(Supabase 기반 저장소)로 완전히 대체되었습니다. 이 변경으로 다음과 같은 이점이 있습니다:
+> - 모든 방 데이터가 Supabase 데이터베이스에 영구 저장됨
+> - 서버 재시작 시에도 방 데이터 유지
+> - 사용자 정보 및 이벤트 로그 기록
+> - 여러 서버 인스턴스 간 데이터 동기화 가능
+> - 방 및 사용자 통계 저장
 
 ## API 엔드포인트
 

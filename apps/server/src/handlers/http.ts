@@ -1,6 +1,6 @@
 import { IncomingMessage, ServerResponse } from 'http';
 import { parse } from 'url';
-import { roomStore } from '../services/roomStore';
+import { roomSupabaseStore } from '../services/roomSupabaseStore';
 import { generateId, getCurrentTimestamp } from '../utils/helpers';
 
 /**
@@ -8,7 +8,7 @@ import { generateId, getCurrentTimestamp } from '../utils/helpers';
  * @param req - HTTP 요청 객체
  * @param res - HTTP 응답 객체
  */
-export function handleHttpRequest(req: IncomingMessage, res: ServerResponse): void {
+export async function handleHttpRequest(req: IncomingMessage, res: ServerResponse): Promise<void> {
   // CORS 헤더 설정
   setCorsHeaders(res);
 
@@ -29,31 +29,31 @@ export function handleHttpRequest(req: IncomingMessage, res: ServerResponse): vo
 
   // 방 이름으로 방 검색 엔드포인트
   if (parsedUrl.pathname === "/rooms/by-name" && req.method === "GET") {
-    handleGetRoomByName(parsedUrl.query, res);
+    await handleGetRoomByName(parsedUrl.query, res);
     return;
   }
 
   // 방 이름 중복 체크 엔드포인트
   if (parsedUrl.pathname === "/rooms/check-name" && req.method === "GET") {
-    handleCheckRoomName(parsedUrl.query, res);
+    await handleCheckRoomName(parsedUrl.query, res);
     return;
   }
 
   // 방 목록 조회 엔드포인트
   if (parsedUrl.pathname === "/rooms" && req.method === "GET") {
-    handleGetRooms(res);
+    await handleGetRooms(res);
     return;
   }
 
   // 방 생성 엔드포인트
   if (parsedUrl.pathname === "/rooms" && req.method === "POST") {
-    handleCreateRoom(req, res);
+    await handleCreateRoom(req, res);
     return;
   }
 
   // 비밀번호 확인 엔드포인트
   if (parsedUrl.pathname === "/rooms/verify-password" && req.method === "POST") {
-    handleVerifyPassword(req, res);
+    await handleVerifyPassword(req, res);
     return;
   }
 
@@ -83,7 +83,7 @@ function handleHealthCheck(res: ServerResponse): void {
 /**
  * 방 이름으로 방 검색 핸들러
  */
-function handleGetRoomByName(query: any, res: ServerResponse): void {
+async function handleGetRoomByName(query: any, res: ServerResponse): Promise<void> {
   const roomName = query.name as string;
   
   if (!roomName) {
@@ -92,25 +92,31 @@ function handleGetRoomByName(query: any, res: ServerResponse): void {
     return;
   }
 
-  const room = roomStore.findRoomByName(roomName);
-  
-  if (room) {
-    res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ 
-      exists: true, 
-      roomId: room.roomId,
-      isPasswordProtected: room.isPasswordProtected 
-    }));
-  } else {
-    res.writeHead(404, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ exists: false }));
+  try {
+    const room = await roomSupabaseStore.findRoomByName(roomName);
+    
+    if (room) {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ 
+        exists: true, 
+        roomId: room.roomId,
+        isPasswordProtected: room.isPasswordProtected 
+      }));
+    } else {
+      res.writeHead(404, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ exists: false }));
+    }
+  } catch (error) {
+    console.error("Error finding room by name:", error);
+    res.writeHead(500, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Failed to find room" }));
   }
 }
 
 /**
  * 방 이름 중복 체크 핸들러
  */
-function handleCheckRoomName(query: any, res: ServerResponse): void {
+async function handleCheckRoomName(query: any, res: ServerResponse): Promise<void> {
   const roomName = query.name as string;
   
   if (!roomName) {
@@ -119,19 +125,26 @@ function handleCheckRoomName(query: any, res: ServerResponse): void {
     return;
   }
 
-  const isTaken = roomStore.isRoomNameTaken(roomName);
-  
-  res.writeHead(200, { "Content-Type": "application/json" });
-  res.end(JSON.stringify({ isTaken }));
+  try {
+    const isTaken = await roomSupabaseStore.isRoomNameTaken(roomName);
+    
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ isTaken }));
+  } catch (error) {
+    console.error("Error checking room name:", error);
+    res.writeHead(500, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: "Failed to check room name" }));
+  }
 }
 
 /**
  * 방 목록 조회 핸들러
  */
-function handleGetRooms(res: ServerResponse): void {
+async function handleGetRooms(res: ServerResponse): Promise<void> {
   try {
     // 방 목록 생성
-    const roomsList = roomStore.getAllRooms().map(room => ({
+    const rooms = await roomSupabaseStore.getAllRooms();
+    const roomsList = rooms.map(room => ({
       roomId: room.roomId,
       roomName: room.roomName,
       description: room.description || "",
@@ -153,25 +166,26 @@ function handleGetRooms(res: ServerResponse): void {
 /**
  * 방 생성 핸들러
  */
-function handleCreateRoom(req: IncomingMessage, res: ServerResponse): void {
+async function handleCreateRoom(req: IncomingMessage, res: ServerResponse): Promise<void> {
   let body = "";
   req.on("data", chunk => {
     body += chunk.toString();
   });
-  req.on("end", () => {
+  req.on("end", async () => {
     try {
       const roomData = JSON.parse(body);
       const { roomId = generateId(), roomName, description, isPasswordProtected, password, createdBy, playlist } = roomData;
 
       // 이름 중복 체크
-      if (roomStore.isRoomNameTaken(roomName)) {
+      const isTaken = await roomSupabaseStore.isRoomNameTaken(roomName);
+      if (isTaken) {
         res.writeHead(409, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: "Room name already exists" }));
         return;
       }
 
       // 새로운 방 생성
-      const room = roomStore.createRoom({
+      const room = await roomSupabaseStore.createRoom({
         roomId,
         roomName,
         description,
@@ -194,12 +208,12 @@ function handleCreateRoom(req: IncomingMessage, res: ServerResponse): void {
 /**
  * 비밀번호 확인 핸들러
  */
-function handleVerifyPassword(req: IncomingMessage, res: ServerResponse): void {
+async function handleVerifyPassword(req: IncomingMessage, res: ServerResponse): Promise<void> {
   let body = "";
   req.on("data", chunk => {
     body += chunk.toString();
   });
-  req.on("end", () => {
+  req.on("end", async () => {
     try {
       const { roomId, password } = JSON.parse(body);
       
@@ -210,7 +224,7 @@ function handleVerifyPassword(req: IncomingMessage, res: ServerResponse): void {
       }
       
       // 방 존재 여부 확인
-      const room = roomStore.getRoom(roomId);
+      const room = await roomSupabaseStore.getRoom(roomId);
       if (!room) {
         res.writeHead(404, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: "Room not found" }));
@@ -218,7 +232,7 @@ function handleVerifyPassword(req: IncomingMessage, res: ServerResponse): void {
       }
       
       // 비밀번호 검증
-      const isPasswordCorrect = roomStore.verifyPassword(roomId, password);
+      const isPasswordCorrect = await roomSupabaseStore.verifyPassword(roomId, password);
       
       res.writeHead(isPasswordCorrect ? 200 : 403, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ 

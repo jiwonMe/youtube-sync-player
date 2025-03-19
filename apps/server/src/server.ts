@@ -41,7 +41,9 @@ import {
 dotenv.config();
 
 // HTTP 서버 생성
-const httpServer = createServer(handleHttpRequest);
+const httpServer = createServer(async (req, res) => {
+  await handleHttpRequest(req, res);
+});
 
 // Socket.io 서버 생성
 const io = new Server(httpServer, {
@@ -70,111 +72,145 @@ io.on("connection", (socket) => {
   // 방 입장
   socket.join(roomId);
 
-  // 사용자 연결 처리
-  const user = handleUserConnect(socket, io, {
+  // 사용자 연결 처리 (비동기)
+  handleUserConnect(socket, io, {
     roomId,
     userId,
     userName: actualUserName,
     userImage
-  });
+  }).then(user => {
+    if (!user) {
+      logger.error("Socket", `Failed to connect user ${userId} to room ${roomId}`);
+      return;
+    }
 
-  if (!user) {
-    logger.error("Socket", `Failed to connect user ${userId} to room ${roomId}`);
-    return;
-  }
+    // 방 상태 전송
+    const room = io.sockets.adapter.rooms.get(roomId);
+    if (room) {
+      socket.emit("room:state", room);
+    }
 
-  // 방 상태 전송
-  const room = io.sockets.adapter.rooms.get(roomId);
-  if (room) {
-    socket.emit("room:state", room);
-  }
-
-  // 다른 사용자들에게 누군가 입장했음을 알림
-  socket.to(roomId).emit("user:joined", {
-    id: userId,
-    name: actualUserName,
-    image: userImage,
-    isHost: user.isHost,
+    // 다른 사용자들에게 누군가 입장했음을 알림
+    socket.to(roomId).emit("user:joined", {
+      id: userId,
+      name: actualUserName,
+      image: userImage,
+      isHost: user.isHost,
+    });
+  }).catch(error => {
+    logger.error("Socket", `Error connecting user ${userId} to room ${roomId}`, error);
   });
 
   // 플레이어 상태 변경 이벤트 핸들러
   socket.on("player:stateChange", (data) => {
-    handlePlayerStateChange(socket, io, data);
+    handlePlayerStateChange(socket, io, data).catch(error => {
+      logger.error("Socket", `Error handling player state change`, error);
+    });
   });
 
   // 플레이어 동기화 이벤트 핸들러
   socket.on("player:sync", (data) => {
-    handlePlayerSync(socket, data, userId, roomId);
+    handlePlayerSync(socket, data, userId, roomId).catch(error => {
+      logger.error("Socket", `Error handling player sync`, error);
+    });
   });
 
   // 동기화 요청 핸들러
   socket.on("player:requestSync", () => {
-    handleRequestSync(socket, io, userId, roomId);
+    handleRequestSync(socket, io, userId, roomId).catch(error => {
+      logger.error("Socket", `Error handling request sync`, error);
+    });
   });
 
   // 특정 사용자 동기화 핸들러
   socket.on("player:syncTo", (data) => {
-    handleSyncTo(socket, io, data, userId, roomId);
+    handleSyncTo(socket, io, data, userId, roomId).catch(error => {
+      logger.error("Socket", `Error handling sync to`, error);
+    });
   });
 
   // 자동 재생 설정 변경 핸들러
   socket.on("autoplay:toggle", (data) => {
-    handleAutoplayToggle(socket, data, userId, roomId);
+    handleAutoplayToggle(socket, data, userId, roomId).catch(error => {
+      logger.error("Socket", `Error handling autoplay toggle`, error);
+    });
   });
 
   // 비디오 변경 핸들러
   socket.on("video:change", (videoId) => {
-    handleVideoChange(socket, io, videoId, userId, roomId);
+    handleVideoChange(socket, io, videoId, userId, roomId).catch(error => {
+      logger.error("Socket", `Error handling video change`, error);
+    });
   });
 
   // 플레이리스트 업데이트 핸들러
   socket.on("playlist:update", (playlist) => {
-    handlePlaylistUpdate(socket, playlist, userId, roomId);
+    handlePlaylistUpdate(socket, playlist, userId, roomId).catch(error => {
+      logger.error("Socket", `Error handling playlist update`, error);
+    });
   });
 
   // 플레이리스트 항목 추가 핸들러
   socket.on("playlist:add", (video) => {
-    handlePlaylistAdd(socket, io, video, userId, roomId);
+    handlePlaylistAdd(socket, io, video, userId, roomId).catch(error => {
+      logger.error("Socket", `Error handling playlist add`, error);
+    });
   });
 
   // 플레이리스트 항목 제거 핸들러
   socket.on("playlist:remove", (videoId) => {
-    handlePlaylistRemove(socket, io, videoId, userId, roomId);
+    handlePlaylistRemove(socket, io, videoId, userId, roomId).catch(error => {
+      logger.error("Socket", `Error handling playlist remove`, error);
+    });
   });
 
   // 채팅 메시지 핸들러
   socket.on("chat:message", (message) => {
-    handleChatMessage(socket, io, message, userId, actualUserName, userImage, roomId);
+    handleChatMessage(socket, io, message, userId, actualUserName, userImage, roomId).catch(error => {
+      logger.error("Socket", `Error handling chat message`, error);
+    });
   });
 
   // 방 설정 업데이트 핸들러
   socket.on("room:update", (settings) => {
-    handleRoomUpdate(socket, io, settings, userId, roomId);
+    handleRoomUpdate(socket, io, settings, userId, roomId).catch(error => {
+      logger.error("Socket", `Error updating room ${roomId}`, error);
+    });
   });
 
   // 시크 이벤트 핸들러
   socket.on("player:seek", (data) => {
-    handleSeek(socket, data, userId, roomId);
+    handleSeek(socket, data, userId, roomId).catch(error => {
+      logger.error("Socket", `Error handling seek`, error);
+    });
   });
 
   // 재생 이벤트 핸들러
   socket.on("player:play", () => {
-    handlePlay(socket, userId, roomId);
+    handlePlay(socket, userId, roomId).catch(error => {
+      logger.error("Socket", `Error handling play`, error);
+    });
   });
 
   // 일시정지 이벤트 핸들러
   socket.on("player:pause", () => {
-    handlePause(socket, userId, roomId);
+    handlePause(socket, userId, roomId).catch(error => {
+      logger.error("Socket", `Error handling pause`, error);
+    });
   });
 
   // 비디오 제어 권한 설정 핸들러
   socket.on("video:controlPermission", (permission) => {
-    handleVideoControlPermission(socket, io, permission, userId, roomId);
+    handleVideoControlPermission(socket, io, permission, userId, roomId).catch(error => {
+      logger.error("Socket", `Error handling video control permission`, error);
+    });
   });
 
   // 연결 해제 핸들러
   socket.on("disconnect", () => {
-    handleUserDisconnect(socket, io, userId, roomId);
+    handleUserDisconnect(socket, io, userId, roomId).catch(error => {
+      logger.error("Socket", `Error disconnecting user ${userId} from room ${roomId}`, error);
+    });
     logger.info("Socket", `User ${actualUserName} (${userId}) disconnected from room ${roomId}`);
   });
 });

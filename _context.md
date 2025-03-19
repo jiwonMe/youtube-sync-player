@@ -60,5 +60,6 @@
 - 웹 앱에서는 익명 키(anon key)를 사용합니다.
 - 서버에서는 서비스 롤 키(service role key)를 사용합니다.
 - DB 스키마는 `supabase/migrations/` 디렉토리에 SQL 파일로 관리됩니다.
+- 2024년 3월 19일부터 서버 측 메모리 기반 저장소(roomStore)를 완전히 Supabase 데이터베이스 기반 저장소(roomSupabaseStore)로 대체하였습니다.
 
 Supabase 관련 상세 정보는 `README-supabase.md` 파일을 참조하세요.
