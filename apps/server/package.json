@@ -2,11 +2,15 @@
   "name": "server",
   "version": "1.0.0",
   "description": "Socket server for Que",
-  "main": "dist/socket-server.js",
+  "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
-    "start": "node dist/socket-server.js",
-    "dev": "ts-node socket-server.ts"
+    "start": "node dist/index.js",
+    "dev": "ts-node index.ts",
+    "dev:watch": "ts-node-dev --respawn --transpile-only index.ts",
+    "lint": "eslint --ext .ts src/",
+    "lint:fix": "eslint --ext .ts src/ --fix",
+    "clean": "rimraf dist"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.1",
@@ -16,7 +20,15 @@
   },
   "devDependencies": {
     "@types/node": "^20.5.0",
+    "@typescript-eslint/eslint-plugin": "^5.59.2",
+    "@typescript-eslint/parser": "^5.59.2",
+    "eslint": "^8.48.0",
+    "eslint-config-prettier": "^8.8.0",
+    "eslint-plugin-prettier": "^4.2.1",
+    "prettier": "^2.8.8",
+    "rimraf": "^5.0.1",
     "ts-node": "^10.9.1",
+    "ts-node-dev": "^2.0.0",
     "typescript": "^5.1.6"
   },
   "engines": {

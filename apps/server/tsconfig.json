@@ -10,9 +10,12 @@
     "baseUrl": ".",
     "paths": {
       "shared": ["../../packages/shared/src"]
-    }
+    },
+    "sourceMap": true,
+    "declaration": true,
+    "resolveJsonModule": true
   },
-  "include": ["*.ts"],
-  "exclude": ["node_modules"]
+  "include": ["src/**/*.ts", "index.ts"],
+  "exclude": ["node_modules", "dist"]
 }
 
