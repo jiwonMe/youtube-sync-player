@@ -23,6 +23,8 @@
 - `tailwind.config.ts`: Tailwind CSS 설정
 - `turbo.json`: Turborepo 설정
 - `vercel.json`: Vercel 배포 설정
+- `README-supabase.md`: Supabase 설정 및 사용 가이드
+- `supabase/`: Supabase 관련 설정 및 마이그레이션 파일
 
 ## 디렉토리 구조
 
@@ -36,6 +38,8 @@
 
 - **프론트엔드**: Next.js, React, Tailwind CSS, shadcn/ui
 - **백엔드**: Node.js, Socket.io
+- **데이터베이스**: Supabase (PostgreSQL)
+- **인증**: Clerk
 - **개발 도구**: TypeScript, Turborepo, pnpm
 
 ## 주요 기능
@@ -45,3 +49,16 @@
 - 실시간 채팅
 - 사용자 참여 상태 표시
 - YouTube 플레이리스트를 위한 Google 인증
+- 사용자별 플레이리스트 관리
+- 시청 기록 저장 및 조회
+
+## Supabase 환경
+
+이 프로젝트는 Supabase를 데이터베이스로 사용합니다. 주요 설정 내용:
+
+- URL: https://pnqwtrgffbgxmwzpbmzr.supabase.co
+- 웹 앱에서는 익명 키(anon key)를 사용합니다.
+- 서버에서는 서비스 롤 키(service role key)를 사용합니다.
+- DB 스키마는 `supabase/migrations/` 디렉토리에 SQL 파일로 관리됩니다.
+
+Supabase 관련 상세 정보는 `README-supabase.md` 파일을 참조하세요.

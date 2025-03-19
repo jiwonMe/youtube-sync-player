@@ -8,6 +8,7 @@ import { CLERK_PUBLISHABLE_KEY } from "@/lib/env"
 import { AnalyticsProvider } from "@/lib/analytics-context"
 import "./globals.css"
 import { usePathname } from "next/navigation"
+import { SupabaseProvider } from "./supabase-provider"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -47,9 +48,11 @@ export default function RootLayout({
         <body className={inter.className}>
           <ThemeProvider defaultTheme="system">
             <AnalyticsProvider>
-              <Navbar />
-              <main className="min-h-[calc(100vh-4rem)]">{children}</main>
-              <ClientFooter />
+              <SupabaseProvider>
+                <Navbar />
+                <main className="min-h-[calc(100vh-4rem)]">{children}</main>
+                <ClientFooter />
+              </SupabaseProvider>
             </AnalyticsProvider>
           </ThemeProvider>
         </body>

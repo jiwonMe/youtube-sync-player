@@ -1,6 +1,31 @@
 import { NextResponse } from "next/server";
-import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
+import { clerkMiddleware, createRouteMatcher, ClerkMiddlewareAuth } from "@clerk/nextjs/server";
 import type { NextRequest } from "next/server";
+
+// Clerk 타입 정의 확장
+declare module "@clerk/nextjs/server" {
+  interface ClerkMiddlewareAuth {
+    supabase?: {
+      userId: string | null;
+      role: string;
+    };
+  }
+}
+
+// NextRequest 타입 정의 확장
+declare global {
+  namespace NodeJS {
+    interface ProcessEnv {
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: string;
+      CLERK_SECRET_KEY: string;
+    }
+  }
+}
+
+// NextRequest 타입 확장을 위한 인터페이스
+interface ExtendedNextRequest extends NextRequest {
+  redirectToSignIn?: boolean;
+}
 
 // Define public routes that don't require authentication
 // 후행 슬래시(trailing slash)를 고려한 공개 경로 패턴 정의
@@ -30,6 +55,17 @@ export default clerkMiddleware((auth, req) => {
     return NextResponse.next();
   }
 
+  // Supabase JWT 클레임 설정
+  auth.supabase = {
+    userId: 'userId' in auth ? (auth as any).userId : null,
+    role: 'authenticated',
+  };
+
+  // 원래 URL 헤더 추가
+  const extendedReq = req as ExtendedNextRequest;
+  if (extendedReq.redirectToSignIn) {
+    extendedReq.headers.set('original-url', extendedReq.url);
+  }
 
   if (req.nextUrl.pathname.startsWith("/api")) {
     try {

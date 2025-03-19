@@ -9,9 +9,10 @@
     "dev": "ts-node socket-server.ts"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.49.1",
     "dotenv": "^16.3.1",
-    "socket.io": "^4.7.2",
-    "shared": "*"
+    "shared": "*",
+    "socket.io": "^4.7.2"
   },
   "devDependencies": {
     "@types/node": "^20.5.0",
@@ -22,4 +23,3 @@
     "node": ">=18.0.0"
   }
 }
-

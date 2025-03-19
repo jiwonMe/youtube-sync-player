@@ -47,3 +47,11 @@
 - Tailwind CSS
 - shadcn/ui
 - Socket.io-client
+- Supabase (데이터베이스 및 스토리지)
+- Clerk (인증)
+
+## Supabase 관련 파일
+
+- `lib/supabase.ts`: Supabase 클라이언트 초기화
+- `lib/supabase-auth.ts`: Clerk과 Supabase 인증 통합
+- `lib/db.ts`: Supabase 데이터베이스 조회 함수
