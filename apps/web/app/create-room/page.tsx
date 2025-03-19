@@ -70,25 +70,43 @@ type Playlist = {
 }
 
 /**
+ * SearchParams를 사용하는 컴포넌트를 위한 래퍼
+ * Next.js 15에서 useSearchParams는 Suspense 경계 내에서 사용해야 함
+ */
+function SearchParamsWrapper({ 
+  children, 
+  onNameFromUrl 
+}: { 
+  children: React.ReactNode,
+  onNameFromUrl: (name: string | null) => void
+}) {
+  const searchParams = useSearchParams()
+  const nameFromUrl = searchParams.get('name')
+
+  useEffect(() => {
+    onNameFromUrl(nameFromUrl)
+  }, [nameFromUrl, onNameFromUrl])
+
+  return <>{children}</>
+}
+
+/**
  * CreateRoomSection 컴포넌트
  * 룸 생성 폼을 표시하는 섹션
  */
 function CreateRoomSection() {
   const router = useRouter()
-  const searchParams = useSearchParams()
   const { user, isSignedIn } = useUser()
   const { toast } = useToast()
   const [isPasswordProtected, setIsPasswordProtected] = useState(false)
   const [selectedPlaylist, setSelectedPlaylist] = useState<Playlist | null>(null)
   const [isMounted, setIsMounted] = useState(false)
   const [isButtonHovered, setIsButtonHovered] = useState(false)
+  const [nameFromUrl, setNameFromUrl] = useState<string | null>(null)
   
   // Mixpanel 이벤트 추적 초기화
   const analytics = useTrackEvent('CreateRoom')
   
-  // URL에서 방 이름 파라미터 가져오기
-  const nameFromUrl = searchParams.get('name')
-
   // 클라이언트 사이드에서만 마운트 상태 업데이트
   useEffect(() => {
     setIsMounted(true)
@@ -475,19 +493,27 @@ function CreateRoomSection() {
 }
 
 /**
- * CreateRoomPage 컴포넌트
- * 방 생성 페이지의 메인 컴포넌트
+ * 전체 CreateRoom 페이지 컴포넌트
  */
 export default function CreateRoomPage() {
+  const [nameFromUrl, setNameFromUrl] = useState<string | null>(null)
+
   return (
     <div className="min-h-screen relative overflow-hidden">
-      {/* Background decoration */}
-      <div className="absolute top-[-10%] right-[-5%] w-[500px] h-[500px] bg-red-500/10 rounded-full blur-3xl opacity-50 animate-blob animation-delay-2000" />
-      <div className="absolute bottom-[-10%] left-[-10%] w-[500px] h-[500px] bg-red-700/10 rounded-full blur-3xl opacity-50 animate-blob animation-delay-4000" />
-      <div className="absolute top-[5%] left-[30%] w-[500px] h-[500px] bg-red-600/5 rounded-full blur-3xl opacity-50 animate-blob animation-delay-3000" />
-      
-      <Suspense fallback={<div className="flex items-center justify-center min-h-screen">Loading...</div>}>
-        <CreateRoomSection />
+      <div className="absolute inset-0 -z-10">
+        <Wave className="h-full w-full" />
+      </div>
+      <Link 
+        href="/" 
+        className="absolute top-4 left-4 z-10 flex items-center text-sm text-muted-foreground hover:text-foreground transition-colors"
+      >
+        <ArrowLeft className="mr-1 h-4 w-4" />
+        Back to home
+      </Link>
+      <Suspense fallback={<div className="min-h-screen flex items-center justify-center">Loading...</div>}>
+        <SearchParamsWrapper onNameFromUrl={setNameFromUrl}>
+          <CreateRoomSection />
+        </SearchParamsWrapper>
       </Suspense>
     </div>
   )

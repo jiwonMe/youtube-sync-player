@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, ReactNode, Suspense } from 'react';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useAuth } from '@clerk/nextjs';
 import MixpanelTracker, { Events, getBaseEventProperties } from './mixpanel';
@@ -27,32 +27,17 @@ const defaultAnalyticsContext: AnalyticsContextType = {
 const AnalyticsContext = createContext<AnalyticsContextType>(defaultAnalyticsContext);
 
 /**
- * Analytics context 제공 컴포넌트
+ * SearchParams를 사용하는 클라이언트 컴포넌트
+ * Next.js 15에서 useSearchParams는 Suspense 경계 내에서 사용해야 함
  */
-export function AnalyticsProvider({ children }: { children: ReactNode }) {
-  const [isInitialized, setIsInitialized] = useState<boolean>(false);
-  const { userId, isSignedIn } = useAuth();
-  const pathname = usePathname();
+function ClientAnalyticsContent({ children, isInitialized, userId, isSignedIn, pathname }: { 
+  children: ReactNode, 
+  isInitialized: boolean,
+  userId: string | null | undefined,
+  isSignedIn: boolean | undefined,
+  pathname: string | null
+}) {
   const searchParams = useSearchParams();
-
-  // Initialize Mixpanel once when component mounts
-  useEffect(() => {
-    if (!isInitialized && MIXPANEL_TOKEN) {
-      MixpanelTracker.init(MIXPANEL_TOKEN);
-      setIsInitialized(true);
-    }
-  }, [isInitialized]);
-
-  // Identify user when they sign in
-  useEffect(() => {
-    if (isInitialized && userId && isSignedIn) {
-      MixpanelTracker.identify(userId);
-      MixpanelTracker.people.set({
-        $userId: userId,
-        $last_login: new Date().toISOString(),
-      });
-    }
-  }, [isInitialized, userId, isSignedIn]);
 
   // Track page views
   useEffect(() => {
@@ -73,6 +58,36 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
     }
   }, [isInitialized, pathname, searchParams]);
 
+  return <>{children}</>;
+}
+
+/**
+ * Analytics context 제공 컴포넌트
+ */
+export function AnalyticsProvider({ children }: { children: ReactNode }) {
+  const [isInitialized, setIsInitialized] = useState<boolean>(false);
+  const { userId, isSignedIn } = useAuth();
+  const pathname = usePathname();
+
+  // Initialize Mixpanel once when component mounts
+  useEffect(() => {
+    if (!isInitialized && MIXPANEL_TOKEN) {
+      MixpanelTracker.init(MIXPANEL_TOKEN);
+      setIsInitialized(true);
+    }
+  }, [isInitialized]);
+
+  // Identify user when they sign in
+  useEffect(() => {
+    if (isInitialized && userId && isSignedIn) {
+      MixpanelTracker.identify(userId);
+      MixpanelTracker.people.set({
+        $userId: userId,
+        $last_login: new Date().toISOString(),
+      });
+    }
+  }, [isInitialized, userId, isSignedIn]);
+
   // Create track event function
   const trackEvent = (eventName: string | Events, properties?: Record<string, any>) => {
     if (isInitialized) {
@@ -85,7 +100,16 @@ export function AnalyticsProvider({ children }: { children: ReactNode }) {
 
   return (
     <AnalyticsContext.Provider value={{ trackEvent }}>
-      {children}
+      <Suspense fallback={children}>
+        <ClientAnalyticsContent 
+          isInitialized={isInitialized}
+          userId={userId}
+          isSignedIn={isSignedIn}
+          pathname={pathname}
+        >
+          {children}
+        </ClientAnalyticsContent>
+      </Suspense>
     </AnalyticsContext.Provider>
   );
 }
