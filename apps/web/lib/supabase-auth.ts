@@ -23,58 +23,90 @@ export async function syncUserWithSupabase() {
     const username = user.username || `${user.firstName} ${user.lastName}`.trim() || user.emailAddresses[0]?.emailAddress || 'Anonymous User';
     const avatar_url = user.imageUrl;
 
-    // Supabase에서 사용자 찾기
-    const { data: existingUser, error: findError } = await serviceClient
-      .from('users')
-      .select('*')
-      .eq('clerk_id', clerk_id)
-      .single();
+    console.log(`Clerk 사용자 정보: ID=${clerk_id}, 이름=${username}`);
+
+    let existingUser = null;
+    let findError: any = null;
+
+    try {
+      // Supabase에서 사용자 찾기
+      const result = await serviceClient
+        .from('users')
+        .select('*')
+        .eq('clerk_id', clerk_id)
+        .single();
+      
+      existingUser = result.data;
+      findError = result.error;
+    } catch (error) {
+      console.log('사용자 조회 중 예외 발생:', error);
+      // 예외를 findError로 할당
+      findError = error;
+    }
 
     // 오류 확인 (사용자가 없는 경우 제외)
-    if (findError && findError.code !== 'PGRST116') {
-      console.error('사용자 조회 오류:', findError);
-      throw findError;
+    if (findError) {
+      if (findError.code === 'PGRST116') {
+        console.log('새 사용자 생성 필요: 데이터베이스에 사용자가 없음');
+      } else {
+        console.error('예상치 못한 사용자 조회 오류:', findError);
+        throw findError;
+      }
     }
 
     let userData;
 
     if (existingUser) {
+      console.log('기존 사용자 발견, 정보 업데이트 중...');
       // 기존 사용자 업데이트
-      const { data: updatedUser, error: updateError } = await serviceClient
-        .from('users')
-        .update({
-          username,
-          avatar_url,
-          last_seen_at: new Date().toISOString(),
-        })
-        .eq('clerk_id', clerk_id)
-        .select()
-        .single();
+      try {
+        const { data: updatedUser, error: updateError } = await serviceClient
+          .from('users')
+          .update({
+            username,
+            avatar_url,
+            last_seen_at: new Date().toISOString(),
+          })
+          .eq('clerk_id', clerk_id)
+          .select()
+          .single();
 
-      if (updateError) {
-        console.error('사용자 업데이트 오류:', updateError);
+        if (updateError) {
+          console.error('사용자 업데이트 오류:', updateError);
+          throw updateError;
+        }
+
+        console.log('사용자 정보 업데이트 성공');
+        userData = updatedUser;
+      } catch (updateError) {
+        console.error('사용자 업데이트 중 예외 발생:', updateError);
         throw updateError;
       }
-
-      userData = updatedUser;
     } else {
+      console.log('새 사용자 생성 중...');
       // 새 사용자 생성
-      const { data: newUser, error: insertError } = await serviceClient
-        .from('users')
-        .insert({
-          clerk_id,
-          username,
-          avatar_url,
-        })
-        .select()
-        .single();
+      try {
+        const { data: newUser, error: insertError } = await serviceClient
+          .from('users')
+          .insert({
+            clerk_id,
+            username,
+            avatar_url,
+          })
+          .select()
+          .single();
 
-      if (insertError) {
-        console.error('사용자 생성 오류:', insertError);
+        if (insertError) {
+          console.error('사용자 생성 오류:', insertError);
+          throw insertError;
+        }
+
+        console.log('새 사용자 생성 성공:', newUser?.id);
+        userData = newUser;
+      } catch (insertError) {
+        console.error('사용자 생성 중 예외 발생:', insertError);
         throw insertError;
       }
-
-      userData = newUser;
     }
 
     return userData;

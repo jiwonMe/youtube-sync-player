@@ -44,8 +44,39 @@ export async function GET() {
     try {
       // Clerk 사용자 정보를 Supabase와 동기화
       console.log('사용자 동기화 시작...');
+      
+      // 서비스 롤 클라이언트로 직접 사용자 테이블 내용 확인 (동기화 전)
+      try {
+        const serviceClient = createServiceRoleClient();
+        const { data: usersBeforeSync, error: usersError } = await serviceClient
+          .from('users')
+          .select('*');
+        
+        console.log('동기화 전 사용자 테이블:', usersBeforeSync?.length || 0, '명 사용자 존재');
+        if (usersError) {
+          console.error('사용자 테이블 조회 오류:', usersError);
+        }
+      } catch (e) {
+        console.error('사용자 테이블 조회 예외:', e);
+      }
+      
       const supabaseUser = await syncUserWithSupabase();
       console.log('사용자 동기화 완료:', supabaseUser);
+      
+      // 서비스 롤 클라이언트로 직접 사용자 테이블 내용 확인 (동기화 후)
+      try {
+        const serviceClient = createServiceRoleClient();
+        const { data: usersAfterSync, error: usersError } = await serviceClient
+          .from('users')
+          .select('*');
+        
+        console.log('동기화 후 사용자 테이블:', usersAfterSync?.length || 0, '명 사용자 존재');
+        if (usersError) {
+          console.error('사용자 테이블 조회 오류:', usersError);
+        }
+      } catch (e) {
+        console.error('사용자 테이블 조회 예외:', e);
+      }
       
       return NextResponse.json({ 
         success: true, 
