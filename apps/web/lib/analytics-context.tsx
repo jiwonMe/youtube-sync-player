@@ -4,7 +4,7 @@ import { createContext, useContext, useEffect, useState, ReactNode, Suspense } f
 import { usePathname, useSearchParams } from 'next/navigation';
 import { useAuth } from '@clerk/nextjs';
 import MixpanelTracker, { Events, getBaseEventProperties } from './mixpanel';
-import { MIXPANEL_TOKEN } from './env';
+import { MIXPANEL_TOKEN } from './env-client';
 
 /**
  * Analytics context를 위한 인터페이스
