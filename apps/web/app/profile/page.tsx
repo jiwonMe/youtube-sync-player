@@ -20,6 +20,29 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
+import { formatDuration } from "@/lib/utils"
+
+/**
+ * 사용자 통계 인터페이스
+ */
+interface UserStats {
+  roomsCreated: number;
+  roomsJoined: number;
+  totalWatchTime: string;
+  favoriteCategory: string;
+}
+
+/**
+ * 최근 방 인터페이스
+ */
+interface RecentRoom {
+  id: string;
+  name: string;
+  host_username: string;
+  host_avatar_url: string | null;
+  user_count: number;
+  last_joined: string;
+}
 
 /**
  * Profile 페이지 컴포넌트
@@ -31,28 +54,60 @@ export default function ProfilePage() {
   const { openUserProfile, signOut } = useClerk()
   const [activeTab, setActiveTab] = useState("overview")
   const [isLoading, setIsLoading] = useState(true)
-
-  // Mock data for demonstration
-  const mockStats = {
-    roomsCreated: 5,
-    roomsJoined: 12,
-    totalWatchTime: "23h 45m",
-    favoriteCategory: "Music"
-  }
+  const [stats, setStats] = useState<UserStats | null>(null)
+  const [recentRooms, setRecentRooms] = useState<RecentRoom[]>([])
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     // Redirect to sign-in if not authenticated
     if (isLoaded && !isSignedIn) {
       router.push("/sign-in")
-    } else if (isLoaded && isSignedIn) {
-      // Simulate loading user data
-      const timer = setTimeout(() => {
-        setIsLoading(false)
-      }, 1000)
-      
-      return () => clearTimeout(timer)
+      return
+    } 
+    
+    if (isLoaded && isSignedIn) {
+      // 사용자 데이터 가져오기
+      fetchUserData()
     }
   }, [isLoaded, isSignedIn, router])
+
+  /**
+   * 사용자 데이터를 가져오는 함수
+   */
+  const fetchUserData = async () => {
+    try {
+      setIsLoading(true)
+      
+      // 사용자 통계 가져오기
+      const statsResponse = await fetch('/api/profile/stats')
+      if (!statsResponse.ok) {
+        throw new Error('Failed to fetch user stats')
+      }
+      const statsData = await statsResponse.json()
+      
+      // 통계 데이터 파싱 및 포맷팅
+      setStats({
+        roomsCreated: statsData.roomsCreated || 0,
+        roomsJoined: statsData.roomsJoined || 0,
+        totalWatchTime: formatDuration(statsData.totalWatchSeconds || 0),
+        favoriteCategory: statsData.favoriteCategory || 'None'
+      })
+      
+      // 최근 방 기록 가져오기
+      const roomsResponse = await fetch('/api/profile/recent-rooms')
+      if (!roomsResponse.ok) {
+        throw new Error('Failed to fetch recent rooms')
+      }
+      const roomsData = await roomsResponse.json()
+      setRecentRooms(roomsData.rooms || [])
+      
+    } catch (err) {
+      console.error('Error fetching user data:', err)
+      setError(err instanceof Error ? err.message : 'An unknown error occurred')
+    } finally {
+      setIsLoading(false)
+    }
+  }
 
   // Loading state while clerk loads
   if (!isLoaded) {
@@ -112,6 +167,13 @@ export default function ProfilePage() {
           </div>
         </div>
 
+        {/* Error message if any */}
+        {error && (
+          <div className="p-4 bg-destructive/10 border border-destructive/20 rounded-md text-destructive">
+            {error}
+          </div>
+        )}
+
         {/* Tabs section with improved styling */}
         <div className="rounded-xl bg-background/90 backdrop-blur-sm border border-border shadow-md p-6 md:p-8">
           <Tabs defaultValue="overview" className="space-y-8" onValueChange={setActiveTab}>
@@ -143,7 +205,7 @@ export default function ProfilePage() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="relative z-10">
-                    <p className="text-2xl font-bold">{isLoading ? <Skeleton className="h-8 w-16" /> : mockStats.roomsCreated}</p>
+                    <p className="text-2xl font-bold">{isLoading ? <Skeleton className="h-8 w-16" /> : stats?.roomsCreated || 0}</p>
                   </CardContent>
                 </Card>
 
@@ -156,7 +218,7 @@ export default function ProfilePage() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="relative z-10">
-                    <p className="text-2xl font-bold">{isLoading ? <Skeleton className="h-8 w-16" /> : mockStats.roomsJoined}</p>
+                    <p className="text-2xl font-bold">{isLoading ? <Skeleton className="h-8 w-16" /> : stats?.roomsJoined || 0}</p>
                   </CardContent>
                 </Card>
 
@@ -169,7 +231,7 @@ export default function ProfilePage() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="relative z-10">
-                    <p className="text-2xl font-bold">{isLoading ? <Skeleton className="h-8 w-16" /> : mockStats.totalWatchTime}</p>
+                    <p className="text-2xl font-bold">{isLoading ? <Skeleton className="h-8 w-16" /> : stats?.totalWatchTime || '0h 0m'}</p>
                   </CardContent>
                 </Card>
 
@@ -182,7 +244,7 @@ export default function ProfilePage() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="relative z-10">
-                    <p className="text-2xl font-bold">{isLoading ? <Skeleton className="h-8 w-16" /> : mockStats.favoriteCategory}</p>
+                    <p className="text-2xl font-bold">{isLoading ? <Skeleton className="h-8 w-16" /> : stats?.favoriteCategory || 'None'}</p>
                   </CardContent>
                 </Card>
               </div>
@@ -206,6 +268,30 @@ export default function ProfilePage() {
                             <Skeleton className="h-4 w-[250px]" />
                             <Skeleton className="h-4 w-[150px]" />
                           </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : recentRooms.length > 0 ? (
+                    <div className="space-y-4">
+                      {recentRooms.slice(0, 3).map((room) => (
+                        <div key={room.id} className="flex items-center gap-4 p-3 rounded-lg hover:bg-primary/5 transition-colors">
+                          <div className="w-12 h-12 rounded-md bg-primary/10 flex items-center justify-center flex-shrink-0">
+                            <Youtube className="h-6 w-6 text-primary" />
+                          </div>
+                          <div>
+                            <h4 className="font-medium">{room.name}</h4>
+                            <p className="text-sm text-muted-foreground">
+                              Hosted by {room.host_username} • {new Date(room.last_joined).toLocaleDateString()}
+                            </p>
+                          </div>
+                          <Button 
+                            size="sm" 
+                            variant="ghost" 
+                            className="ml-auto"
+                            onClick={() => router.push(`/room/${room.id}`)}
+                          >
+                            Join
+                          </Button>
                         </div>
                       ))}
                     </div>
@@ -245,6 +331,34 @@ export default function ProfilePage() {
                         </div>
                       ))}
                     </div>
+                  ) : recentRooms.length > 0 ? (
+                    <div className="space-y-4">
+                      {recentRooms.map((room) => (
+                        <div key={room.id} className="flex items-center gap-4 p-3 rounded-lg hover:bg-primary/5 transition-colors">
+                          <div className="w-12 h-12 rounded-md bg-primary/10 flex items-center justify-center flex-shrink-0">
+                            <Youtube className="h-6 w-6 text-primary" />
+                          </div>
+                          <div>
+                            <h4 className="font-medium">{room.name}</h4>
+                            <p className="text-sm text-muted-foreground">
+                              Hosted by {room.host_username} • {new Date(room.last_joined).toLocaleDateString()}
+                            </p>
+                          </div>
+                          <div className="ml-auto flex items-center gap-2">
+                            <span className="text-xs bg-primary/10 text-primary px-2 py-1 rounded-full">
+                              {room.user_count} {room.user_count === 1 ? 'user' : 'users'}
+                            </span>
+                            <Button 
+                              size="sm" 
+                              variant="ghost"
+                              onClick={() => router.push(`/room/${room.id}`)}
+                            >
+                              Join
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   ) : (
                     <div className="text-muted-foreground text-center py-6">
                       <p>No room history available</p>
@@ -258,9 +372,10 @@ export default function ProfilePage() {
                   <Button 
                     variant="outline"
                     className="transition-all duration-300 hover:shadow-sm"
-                    disabled={isLoading}
+                    disabled={isLoading || recentRooms.length === 0}
+                    onClick={() => fetchUserData()}
                   >
-                    Load More
+                    Refresh
                   </Button>
                 </CardFooter>
               </Card>
