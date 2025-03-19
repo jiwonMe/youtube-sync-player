@@ -14,7 +14,6 @@ export default function SignUpPage() {
         routing="path"
         path="/sign-up/"
         signInUrl="/sign-in/"
-        redirectUrl="/"
       />
       <div className="mt-8 text-sm text-muted-foreground">
         <Link 
