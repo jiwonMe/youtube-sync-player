@@ -17,13 +17,8 @@ const nextConfig = {
     unoptimized: true,
     domains: ['i.ytimg.com', 'img.youtube.com', 'yt3.ggpht.com', 'yt3.googleusercontent.com'],
   },
-  // Disable experimental features that might cause issues
-  experimental: {
-    appDir: true,
-    serverComponentsExternalPackages: ['@clerk/clerk-sdk-node'],
-  },
+  serverExternalPackages: ['@clerk/clerk-sdk-node'],
   output: 'standalone',
-  // Clerk configuration
   transpilePackages: ["@clerk/nextjs"],
   // Ensure proper build ID generation
   generateBuildId: async () => {

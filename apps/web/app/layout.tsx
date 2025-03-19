@@ -7,8 +7,8 @@ import { Footer } from "@/components/footer"
 import { CLERK_PUBLISHABLE_KEY } from "@/lib/env"
 import { AnalyticsProvider } from "@/lib/analytics-context"
 import "./globals.css"
-import { usePathname } from "next/navigation"
 import { SupabaseProvider } from "./supabase-provider"
+import { ClientFooter } from "../components/client-footer"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -59,15 +59,4 @@ export default function RootLayout({
       </html>
     </ClerkProvider>
   )
-}
-
-// Client component에서 경로 기반 조건부 렌더링
-"use client"
-
-function ClientFooter() {
-  const pathname = usePathname()
-  if (pathname?.startsWith("/room")) {
-    return null
-  }
-  return <Footer />
 }
