@@ -29,4 +29,24 @@ export const createServerSupabaseClient = () => {
     process.env.NEXT_PUBLIC_SUPABASE_URL || '',
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
   );
+};
+
+/**
+ * 서비스 롤(관리자) 권한을 가진 Supabase 클라이언트를 생성하는 함수
+ * RLS 정책을 우회하고 모든 테이블에 접근할 수 있는 클라이언트입니다.
+ * 주의: 사용자 정보 동기화와 같은 특별한 작업에만 사용해야 합니다.
+ * @returns 서비스 롤 권한의 Supabase 클라이언트 인스턴스
+ */
+export const createServiceRoleClient = () => {
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  
+  if (!serviceRoleKey) {
+    console.error('Missing SUPABASE_SERVICE_ROLE_KEY environment variable');
+    throw new Error('서비스 롤 키가 설정되지 않았습니다. 환경 변수를 확인하세요.');
+  }
+  
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+    serviceRoleKey
+  );
 }; 

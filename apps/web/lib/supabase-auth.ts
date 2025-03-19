@@ -1,5 +1,5 @@
 import { auth, currentUser } from '@clerk/nextjs/server';
-import { supabase, createServerSupabaseClient } from './supabase';
+import { supabase, createServerSupabaseClient, createServiceRoleClient } from './supabase';
 import type { Database } from 'shared';
 
 /**
@@ -16,12 +16,15 @@ export async function syncUserWithSupabase() {
       throw new Error('사용자가 인증되지 않았습니다.');
     }
 
+    // 서비스 롤 권한으로 Supabase 클라이언트 생성 (RLS 우회)
+    const serviceClient = createServiceRoleClient();
+
     const clerk_id = user.id;
     const username = user.username || `${user.firstName} ${user.lastName}`.trim() || user.emailAddresses[0]?.emailAddress || 'Anonymous User';
     const avatar_url = user.imageUrl;
 
     // Supabase에서 사용자 찾기
-    const { data: existingUser, error: findError } = await supabase
+    const { data: existingUser, error: findError } = await serviceClient
       .from('users')
       .select('*')
       .eq('clerk_id', clerk_id)
@@ -37,7 +40,7 @@ export async function syncUserWithSupabase() {
 
     if (existingUser) {
       // 기존 사용자 업데이트
-      const { data: updatedUser, error: updateError } = await supabase
+      const { data: updatedUser, error: updateError } = await serviceClient
         .from('users')
         .update({
           username,
@@ -56,7 +59,7 @@ export async function syncUserWithSupabase() {
       userData = updatedUser;
     } else {
       // 새 사용자 생성
-      const { data: newUser, error: insertError } = await supabase
+      const { data: newUser, error: insertError } = await serviceClient
         .from('users')
         .insert({
           clerk_id,

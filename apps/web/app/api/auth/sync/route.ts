@@ -14,7 +14,7 @@ export async function POST() {
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
     
-    // Clerk 사용자 정보를 Supabase와 동기화
+    // Clerk 사용자 정보를 Supabase와 동기화 (service_role 권한 사용)
     const supabaseUser = await syncUserWithSupabase();
     
     return NextResponse.json({ user: supabaseUser });
