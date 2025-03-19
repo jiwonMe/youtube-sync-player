@@ -82,7 +82,7 @@ export async function handlePlaylistAdd(socket: Socket, io: Server, video: Video
     const updatedPlaylist = [...room.playlist, video];
     
     // 현재 재생 중인 비디오가 없는 경우, 새 비디오를 현재 비디오로 설정
-    let updates: any = { playlist: updatedPlaylist };
+    const updates: any = { playlist: updatedPlaylist };
     
     if (!room.currentVideo) {
       updates.currentVideo = video;
@@ -132,7 +132,7 @@ export async function handlePlaylistRemove(socket: Socket, io: Server, videoId: 
       updatedPlaylist.splice(videoIndex, 1);
       
       // 업데이트 객체 초기화
-      let updates: any = { playlist: updatedPlaylist };
+      const updates: any = { playlist: updatedPlaylist };
       
       // 현재 재생 중인 비디오가 제거된 경우, 다음 비디오를 재생
       if (room.currentVideo && room.currentVideo.id === videoId) {

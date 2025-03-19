@@ -20,6 +20,6 @@ export function getCurrentTimestamp(): number {
  * @param {number} digits - 표시할 소수점 자릿수
  * @returns {string} 소수점이 포맷된 문자열
  */
-export function formatDecimal(value: number, digits: number = 2): string {
+export function formatDecimal(value: number, digits = 2): string {
   return value.toFixed(digits);
 } 
