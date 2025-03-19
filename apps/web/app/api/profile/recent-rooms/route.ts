@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { auth, currentUser } from '@clerk/nextjs/server';
-import { createServerSupabaseClient } from '@/lib/supabase';
+import { createServiceRoleClient } from '@/lib/supabase';
 
 /**
  * 사용자가 최근에 참여한 방 목록 API 라우트
@@ -18,8 +18,8 @@ export async function GET(req: Request) {
     const url = new URL(req.url);
     const limit = parseInt(url.searchParams.get('limit') || '10', 10);
     
-    // Supabase 클라이언트 생성
-    const supabase = createServerSupabaseClient();
+    // Supabase 서비스 롤 클라이언트 생성
+    const supabase = createServiceRoleClient();
     
     // 사용자 ID 조회
     const { data: userData, error: userError } = await supabase
