@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { auth, currentUser } from '@clerk/nextjs/server';
-import { createServerSupabaseClient } from '@/lib/supabase';
+import { createServerSupabaseClient, createServiceRoleClient } from '@/lib/supabase';
 
 /**
  * 사용자 프로필 통계 API 라우트
@@ -14,8 +14,8 @@ export async function GET() {
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
     
-    // Supabase 클라이언트 생성
-    const supabase = createServerSupabaseClient();
+    // Supabase 서비스 롤 클라이언트 생성 (RLS 우회)
+    const supabase = createServiceRoleClient();
     
     // 사용자 ID 조회
     const { data: userData, error: userError } = await supabase
@@ -24,12 +24,34 @@ export async function GET() {
       .eq('clerk_id', user.id)
       .single();
       
-    if (userError || !userData) {
-      console.error('사용자 조회 오류:', userError);
-      return NextResponse.json({ error: 'User not found in database' }, { status: 404 });
-    }
+    let userId;
     
-    const userId = userData.id;
+    if (userError || !userData) {
+      console.log('사용자 조회 오류:', userError);
+      
+      // 사용자를 찾을 수 없는 경우 새로 생성
+      const { data: newUser, error: createError } = await supabase
+        .from('users')
+        .insert({
+          clerk_id: user.id,
+          email: user.emailAddresses[0]?.emailAddress || '',
+          name: user.firstName ? `${user.firstName} ${user.lastName || ''}`.trim() : '사용자',
+          avatar_url: user.imageUrl || '',
+          created_at: new Date().toISOString()
+        })
+        .select('id')
+        .single();
+      
+      if (createError || !newUser) {
+        console.error('사용자 생성 오류:', createError);
+        return NextResponse.json({ error: 'Failed to create user in database' }, { status: 500 });
+      }
+      
+      userId = newUser.id;
+      console.log('새 사용자가 생성되었습니다:', userId);
+    } else {
+      userId = userData.id;
+    }
     
     // 1. 생성한 방 개수 조회
     const { count: roomsCreated, error: roomsCreatedError } = await supabase
